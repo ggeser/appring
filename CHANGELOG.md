@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0
+
+- A package (`nix run github:mirql/appring`, `nix profile install github:mirql/appring`):
+  the `appring` command (`run`, `open`, `commit`, `cancel`, `toggle`, `settings`, `stop`,
+  `restart`; `open` and `settings` start it when needed), a desktop entry and the icons.
 - The code names follow the app's name: the folder `appring/` (was `ring/`), the config
   folder `~/.config/appring/`, the environment `APPRING_*`, the IPC target `appring`, the
   layer namespace `appring`. The old ones still work: `RING_APP_*`, the IPC target
@@ -18,7 +23,7 @@
   outward); closing fades out by default (or zooms, spirals, or goes at once).
 - The ring's radius grows with the number of items (at least 110 px); buttons are
   48 px; the dead zone is 40 px; satellites are 0.8x.
-- An appearance window (`quickshell ipc -p ring call ring settings`) with a live
+- An appearance window (`appring settings`) with a live
   preview, saved to `appearance.json`: ring scale, dead zone, open at the cursor,
   gap between slices, instant pointer, enlarge selected slice, colours from icons,
   slice labels, animations, closing, flash on run, the animation speeds, centre
