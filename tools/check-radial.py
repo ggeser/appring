@@ -15,7 +15,7 @@ opens, and the style cascade with one warning per unknown key.
 
 RADIAL.LOG: lines of "STEP <state JSON>", from the scene's dump() helpers.
 RUNS.LOG: one JSON argv array a line, from tools/fake-app.py.
-QUICKSHELL.LOG: the ring's own log (its `ring-app state` lines, warnings).
+QUICKSHELL.LOG: the ring's own log (its `appring state` lines, warnings).
 GRACE_TIMING.LOG: one line "MOVE_T0 PENDING_T CLOSED_T" (epoch ms).
 
 Exits 1, saying what differs, if a step, the runs, or the timing is wrong.
@@ -51,7 +51,7 @@ def sat_item(label, icon, kind, **style_overrides):
     return {"label": label, "icon": icon, "kind": kind, "style": style(in_satellite=True, **style_overrides)}
 
 
-# ring/default.json's items: no style anywhere, so all plain defaults.
+# appring/default.json's items: no style anywhere, so all plain defaults.
 ROOT = [
     item("Firefox", "firefox", "leaf"),
     item("Terminal", "utilities-terminal", "leaf"),
@@ -168,6 +168,10 @@ EXPECT = {
     "reread-custom": at(SOLO, -1, True),
     "named-menu": at(SUB1, -1, True),
     "named-missing": at([], -1, True),
+    "closed-by-old-target": closed(),
+    # No APPRING_CONFIG_DIR: only the old ~/.config/ring-app -> read; both -> appring wins.
+    "old-config-folder": at([item("Old", "folder", "leaf")], -1, True),
+    "new-config-folder-wins": at([item("New", "folder", "leaf")], -1, True),
 
     "corner-open-exact-centre": at(ROOT, -1, True, cx=CORNER_X, cy=CORNER_Y),
     "corner-highlight-right": at(ROOT, 1, False, cx=CORNER_X, cy=CORNER_Y),
@@ -191,7 +195,7 @@ EXPECT = {
 # changes anything on the machine: a gesture menu's default must be safe to
 # fire by accident.
 EXPECTED_RUNS = [
-    ["notify-send", "ring-app", "Hello from the ring"],
+    ["notify-send", "appring", "Hello from the ring"],
     ["gnome-system-monitor"],
     ["firefox"],
     ["firefox"],
@@ -202,7 +206,7 @@ def check_no_transitional_centre(quickshell_text):
     """The centre is never animated: between the jump test's close and its
     second open, the log's centres are only the sentinel and the new value,
     never an in-between one."""
-    states = [json.loads(m) for m in re.findall(r"ring-app state (\{.*\})", quickshell_text)]
+    states = [json.loads(m) for m in re.findall(r"appring state (\{.*\})", quickshell_text)]
     centres = [(s["centreX"], s["centreY"]) for s in states]   # tuples of ints throughout
     try:
         a_at = centres.index(JUMP_A)
@@ -227,13 +231,13 @@ def check_unknown_key_warning(quickshell_text):
     """An unknown key gives one warning, never a crash. "notAKey" appears
     twice in menu-style.json, so this also proves one warning per key per
     load, not per occurrence."""
-    hits = re.findall(r'ring-app: unknown style key "notAKey"', quickshell_text)
+    hits = re.findall(r'appring: unknown style key "notAKey"', quickshell_text)
     if len(hits) != 1:
         return False, f"expected exactly one \"notAKey\" warning, found {len(hits)}"
     return True, "exactly one warning for a key that appears twice in the config"
 
 
-# RING_APP_CLOSE_MS as tools/gallery.sh sets it (the default is 150).
+# RING_APP_CLOSE_MS (the old name of APPRING_CLOSE_MS) as tools/gallery.sh sets it (the default is 150).
 GRACE_MS = 2000
 
 
@@ -307,6 +311,13 @@ def main(radial_path, runs_path, quickshell_path, timing_path):
     else:
         bad += 1
         print(f"radial: unknown style key warning check failed: {detail}")
+
+    hints = len(re.findall(r"appring: reading the old config folder", quickshell_text))
+    if hints != 1:
+        bad += 1
+        print(f"radial: expected the old-folder hint exactly once (only the old folder there), found {hints}")
+    else:
+        print("radial: the old config folder hint shows once, and only with the old folder alone")
 
     ok, detail = check_close_grace(timing_path)
     if ok:
