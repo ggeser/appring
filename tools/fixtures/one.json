@@ -1,0 +1,6 @@
+{
+  "monitors": [
+    {"name": "HEADLESS-1", "width": 2880, "height": 1800, "scale": 1.2}
+  ],
+  "focused": "HEADLESS-1"
+}

@@ -1,0 +1,36 @@
+[package]
+name = "ring-iced"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "ring-iced"
+path = "src/main.rs"
+
+[dependencies]
+# mirql's love-sparkle: every mirql manifest has it (exact pin).
+mirql-love-sparkle = "=0.7.1"
+iced = { version = "0.14", default-features = false, features = ["canvas", "tiny-skia"] }
+iced_layershell = "0.19"
+futures = "0.3"
+serde_json = "1"
+# Forces the wayland/x11 backend features on: some dependency in this graph
+# (iced_layershell -> window_clipboard) pulls in softbuffer with neither
+# enabled, which makes its `make_dispatch!`-generated enums empty on Linux
+# and fails to compile (non-exhaustive match on a reference to a type with
+# zero live variants) -- not our code, just Cargo feature unification
+# picking the wrong default; asking for these features ourselves fixes it.
+softbuffer = { version = "0.4", features = ["wayland", "x11"] }
+
+[profile.release]
+opt-level = 2
+debug = false
+
+# A `[patch.crates-io]` pin of iced_exdevtools to 0.20.1 (which fixes the
+# build failure below) was tried and rejected by Cargo itself: "patch for
+# `iced_exdevtools` points to the same source, but patches must point to
+# different sources" -- `[patch]` can only redirect to a *different*
+# source (a git fork, a local path), not pick another version from the
+# same registry past a dependent's semver pin. See README.md: this
+# toolkit does not build today, for reasons upstream of this spike's code.

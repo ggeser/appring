@@ -1,0 +1,35 @@
+[package]
+name = "ring-eguilayershell"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "ring-eguilayershell"
+path = "src/main.rs"
+
+[dependencies]
+# mirql's love-sparkle: every mirql manifest has it (exact pin).
+mirql-love-sparkle = "=0.7.1"
+# No eframe, no winit (on purpose): a real zwlr_layer_shell_v1
+# surface via smithay-client-toolkit, painted with egui-wgpu directly.
+# "system" links the real libwayland-client.so (nixpkgs' `wayland`) rather
+# than SCTK's pure-Rust reimplementation -- needed so the raw wl_display
+# pointer handed to wgpu/EGL has the layout the system EGL/Vulkan loader
+# expects (same reasoning as SCTK's own `examples/wgpu.rs`, which requires
+# this same "system" feature -- checked against its Cargo.toml, not assumed).
+smithay-client-toolkit = { version = "0.21", features = ["system"] }
+wayland-client = "0.31"
+calloop = "0.14"
+calloop-wayland-source = "0.4"
+raw-window-handle = "0.6"
+egui = "0.36"
+# egui-wgpu re-exports its own `wgpu` (egui_wgpu::wgpu) -- used throughout
+# instead of a second, separately-versioned `wgpu` dependency of our own.
+egui-wgpu = "0.36"
+pollster = "1"
+serde_json = "1"
+
+[profile.release]
+opt-level = 2
+debug = false
