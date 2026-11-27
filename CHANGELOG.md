@@ -5,6 +5,21 @@
 - macOS, as its own menu-bar app in `macos/` (Quickshell stays the Linux app). Same `menu.json`: hold a key, point, release to run, groups as a smaller ring. The hold key needs Accessibility permission. The appearance window and its animations are not on macOS yet; `settings` opens the menu file.
 - macOS: a style number `0` or `1` is kept, a click uses the pointer at that moment, and the hold key is tried again after Accessibility is granted.
 
+## 0.2.0
+
+- Groups work as in OPie: a group's button shows one of its items and runs it, the
+  mouse wheel turns to the next, resting on it shows the rest as a ghost ring you can
+  pick from (the one run becomes the face), a middle click jumps into the group and
+  Esc or a right click goes back. Per group `open` (`rotate`, `jump`, `satellite`) and
+  `rotation` (`remember`, `cycle`, `shuffle`, `random`, `reset`); the appearance window
+  has Groups and Nested ring preview; `APPRING_GHOST_MS`.
+- A Hyprland global shortcut, `appring:ring` (`bind = SUPER, grave, global,
+  appring:ring`): the key's press opens the ring and its release runs the item, with no
+  command started for each (that took 70 to 100 ms each way).
+- The ring centres on the pointer as soon as it shows, without waiting for it to move.
+- Closing only fades: nothing zooms or grows in while it goes. The README has
+  Hyprland's layer rule to turn off its own animation for appring.
+
 ## 0.1.0
 
 - A package (`nix run github:mirql/appring`, `nix profile install github:mirql/appring`):

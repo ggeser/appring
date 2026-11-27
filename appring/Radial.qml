@@ -102,6 +102,21 @@ PanelWindow {
     // null, or the open satellite (see `_openSatellite`). Always replaced
     // as a whole object, so it changes in one step.
     property var satellite: null
+    // Groups (see `_groupMode`): "rotate" (the default) shows one of its items,
+    // its "face", and runs it; "jump" switches the ring to its items; "satellite"
+    // opens them as a small ring around the group's button.
+    // The face each "rotate" group shows, by key (`_rotKey`): kept between opens.
+    property var _rotations: ({})
+    // What each main-ring button shows: the item itself, or a group's face.
+    property var faces: []
+    // Rings jumped out of (the last is the one to go back to): Esc goes back.
+    property var _stack: []
+    // The group whose items show as a ghost ring (the preview), or -1.
+    property int ghostIndex: -1
+    property var ghost: null
+    // The ghost ring's item under the pointer (moved out past the group's
+    // button into the ghost ring), or -1: releasing runs it.
+    property int ghostHighlighted: -1
     property int highlightedIndex: -1
     property bool deadZone: true
     property real _pointerX: 0
@@ -188,6 +203,11 @@ PanelWindow {
         screen = target;
         menuName = name ?? "";
         satellite = null;
+        _stack = [];
+        ghostIndex = -1;
+        ghost = null;
+        ghostHighlighted = -1;
+        ghostTimer.stop();
         highlightedIndex = -1;
         deadZone = true;
         _pastOuterHandled = false;
@@ -204,12 +224,17 @@ PanelWindow {
 
     function toggle(name) {
         if (_open)
-            cancel();
+            _close();   // closes, from any depth
         else
             open(name);
     }
 
+    // Esc, a right click, IPC cancel: back out of a jumped-into ring, or close.
     function cancel() {
+        if (_open && _stack.length > 0) {
+            _back();
+            return;
+        }
         _close();
     }
 
@@ -234,16 +259,178 @@ PanelWindow {
             _close({ sat: satellite.highlighted });
             return;
         }
+        if (ghost && ghostHighlighted >= 0 && ghostIndex >= 0) {
+            // an item of the ghost ring: run it, and it becomes the group's face
+            const g = items[ghostIndex], child = ghost.items[ghostHighlighted];
+            if (child.items) {
+                // a group in the ghost ring: into its owner, then into it (so
+                // Esc goes back through the owner)
+                _jump(ghostIndex);
+                _jump(items.indexOf(child));
+                return;
+            }
+            _run(child);
+            _setFace(g, g.items.indexOf(child));
+            _close({ ghost: ghostHighlighted });
+            return;
+        }
         if (deadZone || !_current) {
             cancel();
             return;
         }
         if (_current.items) {
-            _openSatellite(highlightedIndex);
+            const mode = _groupMode(_current);
+            if (mode === "satellite") {
+                _openSatellite(highlightedIndex);
+            } else if (mode === "jump") {
+                _jump(highlightedIndex);
+            } else {
+                // run the group's face, then turn it as the group says
+                const face = faces[highlightedIndex];
+                if (!face || face.items) {
+                    _jump(highlightedIndex);   // a group inside a group: open it
+                    return;
+                }
+                _run(face);
+                _afterRun(_current);
+                _close({ main: highlightedIndex });
+            }
             return;
         }
         _run(_current);
         _close({ main: highlightedIndex });
+    }
+
+    // ── nested rings ──────────────────────────────────────────────────
+
+    function _groupMode(item) {
+        const m = item.open ?? Settings.groups;
+        return (m === "jump" || m === "satellite") ? m : "rotate";
+    }
+    // a group's place: the menu, then its index in each ring from the top
+    // (labels can repeat, so they are not part of it)
+    function _keyAt(path) {
+        return menuName + ":" + path.join("/");
+    }
+    function _rotKey(item) {
+        return _keyAt(_stack.map(f => f.index).concat([items.indexOf(item)]));
+    }
+    function _faceIndex(item) {
+        const n = item.items.length;
+        const i = _rotations[_rotKey(item)] ?? 0;
+        return n > 0 ? ((i % n) + n) % n : 0;
+    }
+    function _updateFaces() {
+        faces = items.map(it => (it.items && it.items.length && _groupMode(it) === "rotate") ? it.items[_faceIndex(it)] : it);
+    }
+    function _setFace(item, i) {
+        const next = Object.assign({}, _rotations);
+        next[_rotKey(item)] = i;
+        _rotations = next;
+    }
+    // the mouse wheel over a "rotate" group: its next (+1) or previous (-1) item
+    function _rotate(index, step) {
+        const it = items[index];
+        if (!it || !it.items || !it.items.length || _groupMode(it) !== "rotate")
+            return;
+        _setFace(it, _faceIndex(it) + step);
+        _updateFaces();
+        if (ghostIndex === index)
+            _showGhost(index);
+        _dumpState();
+    }
+    // after its face ran: "cycle" turns to the next item, "shuffle"/"random"
+    // to another at random; "remember" (the default) and "reset" stay
+    function _afterRun(item) {
+        const n = item.items.length, mode = item.rotation ?? "remember";
+        if (n < 2)
+            return;
+        const i = _faceIndex(item);
+        if (mode === "cycle")
+            _setFace(item, i + 1);
+        else if (mode === "shuffle" || mode === "random")
+            _setFace(item, (i + 1 + Math.floor(Math.random() * (n - 1))) % n);
+    }
+    // "reset" groups, at every depth, show their first item each time the
+    // ring opens (called with the top ring's items)
+    function _resetFaces() {
+        const next = Object.assign({}, _rotations);
+        const walk = (list, path) => list.forEach((it, i) => {
+            if (!Array.isArray(it.items))
+                return;
+            if ((it.rotation ?? "") === "reset")
+                next[_keyAt(path.concat([i]))] = 0;
+            walk(it.items, path.concat([i]));
+        });
+        walk(items, []);
+        _rotations = next;
+    }
+
+    // Switch the ring to a group's items, keeping the way back.
+    function _jump(index) {
+        const it = items[index];
+        if (!it || !it.items || !it.items.length)
+            return;
+        const groupRaw = (it.style && typeof it.style === "object") ? it.style : {};
+        _stack = _stack.concat([{ items: items, styles: mainStyles, label: it.label, index: index }]);
+        const kids = it.items;
+        items = kids;
+        mainStyles = kids.map(c => _effectiveStyle(c, false, groupRaw, kids.length));
+        _afterSwitch();
+    }
+    function _back() {
+        const f = _stack[_stack.length - 1];
+        _stack = _stack.slice(0, -1);
+        items = f.items;
+        mainStyles = f.styles;
+        _afterSwitch();
+    }
+    // counts jumps and backs: the live ring zooms in again on each
+    property int _switches: 0
+    function _afterSwitch() {
+        _switches++;
+        satellite = null;
+        ghostIndex = -1;
+        ghost = null;
+        ghostHighlighted = -1;
+        ghostTimer.stop();
+        satCloseTimer.stop();
+        groupTimer.stop();
+        highlightedIndex = -1;
+        deadZone = true;
+        _pastOuterHandled = false;
+        _updateFaces();
+        _recomputeHighlight();
+        _dumpState();
+    }
+
+    // The ghost ring: a group's other items, smaller, further out along its
+    // direction, on a circle through the group's own button (its face's place).
+    function _showGhost(index) {
+        const it = items[index];
+        if (!it || !it.items || it.items.length < 2) {
+            ghostIndex = -1;
+            ghost = null;
+            return;
+        }
+        const n = it.items.length, cur = _faceIndex(it);
+        const others = [];
+        for (let k = 1; k < n; k++)
+            others.push(it.items[(cur + k) % n]);
+        const groupRaw = (it.style && typeof it.style === "object") ? it.style : {};
+        const styles = others.map(c => _effectiveStyle(c, true, groupRaw, n));
+        const r = Math.max(Theme.ghostMinRadius, Theme.radialSlotSize * Theme.radialSatelliteScale / (2 * Math.sin(Math.PI / n))) + 4 * Theme.s;
+        for (const st of styles)
+            st.ringRadius = Math.round(r);
+        const angle = index * 360 / items.length;
+        const mainR = mainStyles[index]?.ringRadius ?? Theme.ringRadiusFor(items.length);
+        const d = mainR + r * 1.1;
+        const rad = angle * Math.PI / 180;
+        ghostIndex = index;
+        ghost = {
+            items: others, styles: styles, slotCount: n, startAngle: angle + 180,
+            centreX: centreX + d * Math.sin(rad), centreY: centreY - d * Math.cos(rad)
+        };
     }
 
     // `ran`: the item just run, { main: index } or { sat: index }: it flashes.
@@ -253,12 +440,14 @@ PanelWindow {
         if (_open && _centreEstablished && items.length > 0 && ms > 0) {
             // keep drawing what was there, going away, while picking is over
             _fade = {
-                items: items, styles: mainStyles, highlighted: highlightedIndex, deadZone: deadZone,
+                items: items, styles: mainStyles, faces: faces, ghost: ghost, highlighted: highlightedIndex, deadZone: deadZone,
                 centreX: centreX, centreY: centreY, pointerAngle: liveRing.chevronAngle, satellite: satellite,
                 mainColours: liveRing.mainColours, satColours: liveRing.satColours,
                 ms: ms,
                 flashMain: flashing && ran.main !== undefined ? ran.main : -1,
-                flashSat: flashing && ran.sat !== undefined ? ran.sat : -1
+                flashSat: flashing && ran.sat !== undefined ? ran.sat : -1,
+                flashGhost: flashing && ran.ghost !== undefined ? ran.ghost : -1,
+                ghostHighlighted: ghostHighlighted
             };
             _open = false;
             fadeOut.duration = ms;
@@ -269,7 +458,13 @@ PanelWindow {
         }
         items = [];
         mainStyles = [];
+        faces = [];
+        _stack = [];
         satellite = null;
+        ghostIndex = -1;
+        ghost = null;
+        ghostHighlighted = -1;
+        ghostTimer.stop();
         highlightedIndex = -1;
         deadZone = true;
         groupTimer.stop();
@@ -392,7 +587,7 @@ PanelWindow {
     function _effectiveStyle(item, inSatellite, groupStyleRaw, count) {
         let s = _baseStyle(inSatellite, count);
         s = _mergeStyle(s, _globalStyleRaw);
-        if (inSatellite && groupStyleRaw)
+        if (groupStyleRaw)
             s = _mergeStyle(s, groupStyleRaw);
         s = _mergeStyle(s, item && item.style);
         return s;
@@ -493,6 +688,18 @@ PanelWindow {
             return;
         }
 
+        // Out past a group's button with its ghost ring showing: the pointer
+        // picks among the ghost ring's items; the group stays highlighted.
+        if (ghost && ghostIndex >= 0 && !mainDeadZone && _inGhostArea(ghostIndex, mdist, mainAngle)) {
+            deadZone = false;
+            _pointerAngle = mainAngle;
+            highlightedIndex = ghostIndex;
+            ghostHighlighted = _ghostItemAt(_pointerX, _pointerY);
+            _dumpState();
+            return;
+        }
+        ghostHighlighted = -1;
+
         // The main ring alone.
         deadZone = mainDeadZone;
         if (deadZone || items.length === 0) {
@@ -500,6 +707,7 @@ PanelWindow {
                 highlightedIndex = -1;
                 groupTimer.stop();
             }
+            _hideGhost();
             _dumpState();
             return;
         }
@@ -508,15 +716,60 @@ PanelWindow {
             highlightedIndex = mainIdx;
             _pastOuterHandled = false;
             groupTimer.restart();
+            // the preview of a "rotate" or "jump" group, after a short rest
+            _hideGhost();
+            const h = items[mainIdx];
+            if (h && h.items && _groupMode(h) !== "satellite" && Settings.ghost)
+                ghostTimer.restart();
         }
         const cur = items[mainIdx];
+        // pushed out past a "rotate" or "jump" group before its ghost ring
+        // showed: show it now, and let it take the pointer
+        if (cur && cur.items && cur.items.length > 1 && _groupMode(cur) !== "satellite" && Settings.ghost
+                && !ghost && _inGhostArea(mainIdx, mdist, mainAngle)) {
+            ghostTimer.stop();
+            _showGhost(mainIdx);
+            _recomputeHighlight();
+            return;
+        }
         const ringRadius = mainStyles[mainIdx]?.ringRadius ?? Theme.ringRadiusFor(items.length);
-        if (cur && cur.items && mdist > _outerThreshold(ringRadius) && !_pastOuterHandled) {
+        if (cur && cur.items && _groupMode(cur) === "satellite" && mdist > _outerThreshold(ringRadius) && !_pastOuterHandled) {
             _pastOuterHandled = true;
             _openSatellite(mainIdx);
             return;   // _openSatellite already dumped
         }
         _dumpState();
+    }
+
+    function _hideGhost() {
+        ghostTimer.stop();
+        if (ghostIndex !== -1 || ghost) {
+            ghostIndex = -1;
+            ghost = null;
+        }
+        ghostHighlighted = -1;
+    }
+
+    // Is the pointer out past group `index`'s button (and still in its
+    // direction, with a margin)? Then the ghost ring is where it points.
+    function _inGhostArea(index, mdist, mainAngle) {
+        const r = mainStyles[index]?.ringRadius ?? Theme.ringRadiusFor(items.length);
+        const size = mainStyles[index]?.size ?? Theme.radialButtonSize;
+        let diff = Math.abs(mainAngle - index * 360 / items.length) % 360;
+        if (diff > 180)
+            diff = 360 - diff;
+        return mdist > r + size * 0.55 && diff <= 180 / items.length + Theme.ghostAngleMargin;
+    }
+    // the ghost ring's item in the pointer's direction from its centre: its
+    // first slot is the group's own button (the face, -1), then its items
+    function _ghostItemAt(x, y) {
+        const dx = x - ghost.centreX, dy = y - ghost.centreY;
+        const r = ghost.styles.length ? ghost.styles[0].ringRadius : 0;
+        if (Math.hypot(dx, dy) < r * 0.4)
+            return -1;
+        const a = ((Math.atan2(dx, -dy) * 180 / Math.PI - ghost.startAngle) % 360 + 720) % 360;
+        const slot = Math.round(a / (360 / ghost.slotCount)) % ghost.slotCount;
+        return slot === 0 ? -1 : slot - 1;
     }
 
     // ── config loading ────────────────────────────────────────────────
@@ -527,17 +780,12 @@ PanelWindow {
     function _sanitizeItems(rawItems, context) {
         if (!Array.isArray(rawItems))
             return [];
+        // at every depth: a group's items can be groups (jump, rotate)
         return rawItems.filter(it => it && typeof it.label === "string").map(it => {
             if (it.style && typeof it.style === "object")
                 _warnUnknownKeys(it.style, "item \"" + it.label + "\"" + context);
-            if (Array.isArray(it.items)) {
-                const children = it.items.filter(c => c && typeof c.label === "string").map(c => {
-                    if (c.style && typeof c.style === "object")
-                        _warnUnknownKeys(c.style, "item \"" + c.label + "\" (child of \"" + it.label + "\")");
-                    return c;
-                });
-                return Object.assign({}, it, { items: children });
-            }
+            if (Array.isArray(it.items))
+                return Object.assign({}, it, { items: _sanitizeItems(it.items, " (child of \"" + it.label + "\")") });
             return it;
         });
     }
@@ -565,8 +813,14 @@ PanelWindow {
 
     function _applyConfig(parsed) {
         _globalStyleRaw = parsed.styleRaw;
+        // a menu read while open (the read is not instant) starts at its top:
+        // no way back into the old one, no old ghost ring
+        _stack = [];
+        _hideGhost();
         items = parsed.items;
         mainStyles = items.map(it => _effectiveStyle(it, false, null, items.length));
+        _resetFaces();
+        _updateFaces();
         satellite = null;
         highlightedIndex = -1;
         deadZone = true;
@@ -622,6 +876,16 @@ PanelWindow {
         }));
     }
 
+    // the face of each "rotate" group in the main ring: { index: item index }
+    function _rotationDump() {
+        const out = {};
+        items.forEach((it, i) => {
+            if (it.items && it.items.length && _groupMode(it) === "rotate")
+                out[i] = _faceIndex(it);
+        });
+        return out;
+    }
+
     // Called by hand at the end of every function that changes several of
     // these properties together, never from a property-change handler:
     // a handler would fire after the first property changes and log a
@@ -636,6 +900,10 @@ PanelWindow {
             deadZone: root.deadZone,
             centreX: Math.round(root.centreX),
             centreY: Math.round(root.centreY),
+            rotation: root._rotationDump(),
+            ghost: root.ghostIndex,
+            ghostHighlighted: root.ghostHighlighted,
+            depth: root._stack.length,
             satellite: root.satellite ? {
                 parentIndex: root.satellite.parentIndex,
                 items: root._itemsDump(root.satellite.items, root.satellite.styles),
@@ -647,12 +915,36 @@ PanelWindow {
         }));
     }
 
+    // The appearance window changes how groups open, or the ghost ring, while
+    // the ring is open (its preview): faces and the ghost ring follow at once.
+    Connections {
+        target: Settings
+        function onGroupsChanged() {
+            root._hideGhost();
+            root.satellite = null;
+            root._updateFaces();
+            if (root._open) {
+                root._recomputeHighlight();
+                root._dumpState();
+            }
+        }
+        function onGhostChanged() {
+            if (Settings.ghost)
+                return;
+            root._hideGhost();
+            if (root._open) {
+                root._recomputeHighlight();
+                root._dumpState();
+            }
+        }
+    }
+
     // Its screen going away while open closes it.
     Connections {
         target: Quickshell
         function onScreensChanged() {
             if (root._open && !root._realScreens().includes(root.screen))
-                root.cancel();
+                root._close();   // closes, from any depth
         }
     }
 
@@ -674,6 +966,17 @@ PanelWindow {
         function settings(): void { root.settingsRequested(); }
     }
 
+    // The key straight from Hyprland, no process to start (an `ipc` call takes
+    // 70-100 ms): bind it with `global, appring:ring`. Held down: the default
+    // menu opens; let go: the highlighted item runs.
+    GlobalShortcut {
+        appid: "appring"
+        name: "ring"
+        description: "appring: hold to open, release to run"
+        onPressed: root.open("")
+        onReleased: root.commit()
+    }
+
     Timer {
         id: groupTimer
         interval: root._restMs
@@ -681,9 +984,22 @@ PanelWindow {
             if (root.satellite)
                 return;
             const cur = root._current;
-            if (cur && cur.items && !root._pastOuterHandled) {
+            if (cur && cur.items && root._groupMode(cur) === "satellite" && !root._pastOuterHandled) {
                 root._pastOuterHandled = true;
                 root._openSatellite(root.highlightedIndex);
+            }
+        }
+    }
+
+    // The ghost ring shows after resting this long on a group.
+    Timer {
+        id: ghostTimer
+        interval: Theme.ghostDelay
+        onTriggered: {
+            if (root._open && root._current && root._current.items && !root.satellite
+                    && Settings.ghost && root._groupMode(root._current) !== "satellite") {
+                root._showGhost(root.highlightedIndex);
+                root._dumpState();
             }
         }
     }
@@ -722,26 +1038,39 @@ PanelWindow {
             }
         }
 
-        // the ring that just closed, fading away
-        Ring {
+        // The ring that just closed, fading away: made afresh at each close,
+        // already in place, so nothing in it animates in (the open zoom, a
+        // button's grow) while it fades out.
+        Loader {
             anchors.fill: parent
-            visible: !!root._fade
-            items: root._fade ? root._fade.items : []
-            styles: root._fade ? root._fade.styles : []
-            highlighted: root._fade ? root._fade.highlighted : -1
-            deadZone: root._fade ? root._fade.deadZone : true
-            centreX: root._fade ? root._fade.centreX : -1
-            centreY: root._fade ? root._fade.centreY : -1
-            pointerAngle: root._fade ? root._fade.pointerAngle : 0
-            ringVisible: !!root._fade
-            satellite: root._fade ? root._fade.satellite : null
-            closeT: root._fadeT
-            closeMs: root._fade ? root._fade.ms : 0
-            flashMain: root._fade ? root._fade.flashMain : -1
-            flashSat: root._fade ? root._fade.flashSat : -1
-            presetMain: root._fade ? root._fade.mainColours : ({})
-            presetSat: root._fade ? root._fade.satColours : ({})
-            spin: root.spinAngle
+            active: !!root._fade
+            sourceComponent: Component {
+            Ring {
+                anchors.fill: parent
+                animateOpen: false
+                visible: !!root._fade
+                items: root._fade ? root._fade.items : []
+                styles: root._fade ? root._fade.styles : []
+                highlighted: root._fade ? root._fade.highlighted : -1
+                deadZone: root._fade ? root._fade.deadZone : true
+                centreX: root._fade ? root._fade.centreX : -1
+                centreY: root._fade ? root._fade.centreY : -1
+                pointerAngle: root._fade ? root._fade.pointerAngle : 0
+                ringVisible: !!root._fade
+                satellite: root._fade ? root._fade.satellite : null
+                faces: root._fade ? root._fade.faces : []
+                ghost: root._fade ? root._fade.ghost : null
+                ghostHighlighted: root._fade ? root._fade.ghostHighlighted : -1
+                flashGhost: root._fade ? root._fade.flashGhost : -1
+                closeT: root._fadeT
+                closeMs: root._fade ? root._fade.ms : 0
+                flashMain: root._fade ? root._fade.flashMain : -1
+                flashSat: root._fade ? root._fade.flashSat : -1
+                presetMain: root._fade ? root._fade.mainColours : ({})
+                presetSat: root._fade ? root._fade.satColours : ({})
+                spin: root.spinAngle
+            }
+            }
         }
 
         // the live ring: hidden the moment the menu closes (the fading copy
@@ -750,6 +1079,7 @@ PanelWindow {
             id: liveRing
             anchors.fill: parent
             visible: root._open
+            zoomKey: root._switches
             spin: root.spinAngle
             items: root.items
             styles: root.mainStyles
@@ -760,12 +1090,29 @@ PanelWindow {
             pointerAngle: root._pointerAngle
             ringVisible: root._centreEstablished
             satellite: root.satellite
+            faces: root.faces
+            ghost: root.ghost
+            ghostHighlighted: root.ghostHighlighted
         }
 
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+            // The pointer is over the window as soon as it shows: take its
+            // place at once, without waiting for the mouse to move.
+            onEntered: {
+                if (root._open && !root._centreEstablished) {
+                    root._pointerX = mouseX;
+                    root._pointerY = mouseY;
+                    root.centreX = Settings.atCursor ? mouseX : root.width / 2;
+                    root.centreY = Settings.atCursor ? mouseY : root.height / 2;
+                    root._centreEstablished = true;
+                    root._hasPointer = true;
+                    root._dumpState();
+                    root._recomputeHighlight();
+                }
+            }
             onPositionChanged: mouse => {
                 root._pointerX = mouse.x;
                 root._pointerY = mouse.y;
@@ -787,7 +1134,18 @@ PanelWindow {
                     root.cancel();
                     return;
                 }
+                // the middle button opens a group fully (a jump), whatever its mode
+                if (mouse.button === Qt.MiddleButton) {
+                    if (root._open && !root.satellite && !root.deadZone && root._current && root._current.items)
+                        root._jump(root.highlightedIndex);
+                    return;
+                }
                 root.commit();
+            }
+            // the wheel over a "rotate" group turns which item it shows
+            onWheel: wheel => {
+                if (root._open && !root.satellite && !root.deadZone && root.highlightedIndex >= 0)
+                    root._rotate(root.highlightedIndex, wheel.angleDelta.y < 0 ? 1 : -1);
             }
         }
     }

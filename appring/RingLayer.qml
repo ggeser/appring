@@ -76,7 +76,6 @@ Item {
     }
     // where the chevron points now (it swings round to the cursor)
     readonly property real chevronAngle: (Theme.reducedMotion || Settings.instantPointer) ? pointerAngle : centre.pointerShown
-    onItemsChanged: iconColours = ({})
 
     // A slice's colour: "auto" takes it from the icon (the "Colours from
     // icons" setting; else, or while the icon loads, Theme.slicePalette by
@@ -101,18 +100,54 @@ Item {
         }
     }
 
+    // The slots: by default one per item, the first straight up. A ghost ring
+    // has one slot more than items (its first is the group's own button) and
+    // starts pointing back at the main ring.
+    property var faces: []          // what each button shows (a group's face), parallel to `items`
+    property int slotCount: 0       // 0: one slot per item
+    property int slotOffset: 0      // the first item's slot
+    property real startAngle: 0     // the first slot's angle, degrees, 0 = up, clockwise
     function _angleOf(index) {
-        return items.length ? index * (360 / items.length) : 0;
+        const n = slotCount > 0 ? slotCount : items.length;
+        return n ? startAngle + (index + slotOffset) * (360 / n) : 0;
     }
 
     // Grows from 0 to 1 when the ring opens: the buttons come out from the
     // centre. Animate in, snap out: closing (ringVisible -> false) disables
     // the Behavior, so nothing lingers at the old centre when the next open
     // lands somewhere else.
-    property real spread: ringVisible ? 1 : Theme.zoomFrom
-    Behavior on spread {
-        enabled: ringLayer.ringVisible
-        NumberAnimation { duration: Theme.open; easing.type: Easing.OutQuad }
+    // Set by hand, not bound: it zooms in when the ring shows and again when an
+    // open ring gets new items (a jump, or back); it snaps back when hidden.
+    // Off for the closing copy: it is shown already in place, so nothing in it
+    // animates in (no zoom, no grow, no fade-in): it only goes away.
+    property bool animateOpen: true
+    readonly property bool _animIn: ringVisible && animateOpen
+    property real spread: 1
+    Component.onCompleted: spread = (ringVisible || !animateOpen) ? 1 : Theme.zoomFrom
+    onRingVisibleChanged: {
+        if (!animateOpen) {
+            spread = 1;
+        } else if (!ringVisible) {
+            rezoom.stop();
+            spread = Theme.zoomFrom;
+        } else if (Theme.open > 0) {
+            rezoom.restart();
+        } else {
+            spread = 1;
+        }
+    }
+    onItemsChanged: iconColours = ({})   // other items: their colours are sampled afresh
+    // a jump into a group, or back (Ring.zoomKey): zoom in again
+    property int zoomKey: 0
+    onZoomKeyChanged: if (ringVisible && Theme.open > 0) rezoom.restart()
+    NumberAnimation {
+        id: rezoom
+        target: ringLayer
+        property: "spread"
+        from: Theme.zoomFrom
+        to: 1
+        duration: Theme.open
+        easing.type: Easing.OutQuad
     }
 
     // An optional soft halo around the ring (`style.backdrop: true` on any
@@ -129,7 +164,7 @@ Item {
         height: d
         opacity: ringLayer.ringVisible ? 1 : 0
         Behavior on opacity {
-            enabled: ringLayer.ringVisible
+            enabled: ringLayer._animIn
             NumberAnimation { duration: Theme.fast }
         }
         ShapePath {
@@ -197,11 +232,11 @@ Item {
         scale: (ringLayer.ringVisible ? 1 : Theme.zoomFrom) * (ringLayer._spiral ? 1 + 0.25 * ringLayer._goneEased : ringLayer._zoom ? 1 - ringLayer._goneEased : 1)
         opacity: (ringLayer.ringVisible ? 1 : 0) * (1 - ringLayer._goneEased)
         Behavior on scale {
-            enabled: ringLayer.ringVisible
+            enabled: ringLayer._animIn
             NumberAnimation { duration: Theme.open; easing.type: Easing.OutQuad }
         }
         Behavior on opacity {
-            enabled: ringLayer.ringVisible
+            enabled: ringLayer._animIn
             NumberAnimation { duration: Theme.open * 0.6 }
         }
 
@@ -353,6 +388,8 @@ Item {
             required property int index
             readonly property var _style: ringLayer.styles[index] ?? ({})
             readonly property real _angleDeg: ringLayer._angleOf(index)
+            // what it shows: the item, or a group's face (the item it would run)
+            readonly property var _face: ringLayer.faces[index] ?? modelData
             readonly property real _angleRad: _angleDeg * Math.PI / 180
             readonly property bool _active: index === ringLayer.highlighted && !ringLayer.deadZone
             readonly property bool _isGroup: !!button.modelData.items
@@ -393,11 +430,11 @@ Item {
             opacity: (ringLayer.ringVisible ? 1 : 0) * _dim
                      * (_flashing ? (_fp < 0.55 ? 1 : 1 - (_fp - 0.55) / 0.45) : 1 - _g)
             Behavior on scale {
-                enabled: ringLayer.ringVisible
+                enabled: ringLayer._animIn
                 NumberAnimation { duration: Theme.fast; easing.type: Theme.easing }
             }
             Behavior on opacity {
-                enabled: ringLayer.ringVisible
+                enabled: ringLayer._animIn
                 NumberAnimation { duration: Theme.open * 0.6 }
             }
 
@@ -426,8 +463,21 @@ Item {
                 width: 24
                 height: 24
                 renderStrategy: Canvas.Immediate
-                readonly property string src: button.modelData.icon ? Quickshell.iconPath(button.modelData.icon, true) : ""
-                onSrcChanged: if (src !== "") loadImage(src)
+                readonly property string src: button._face.icon ? Quickshell.iconPath(button._face.icon, true) : ""
+                // a new face: forget the old one's colour (the palette's until
+                // this one is sampled; it stays so for no icon or a grey one)
+                onSrcChanged: {
+                    if (ringLayer.iconColours[button.index] !== undefined) {
+                        const next = Object.assign({}, ringLayer.iconColours);
+                        delete next[button.index];
+                        ringLayer.iconColours = next;
+                    }
+                    if (src !== "") {
+                        loadImage(src);
+                        if (isImageLoaded(src))
+                            requestPaint();
+                    }
+                }
                 Component.onCompleted: if (src !== "") loadImage(src)
                 onImageLoaded: requestPaint()
                 onPaint: {
@@ -466,7 +516,7 @@ Item {
             IconImage {
                 anchors.centerIn: parent
                 implicitSize: Math.round(button._size * Theme.radialIconFill)
-                source: button.modelData.icon ? Quickshell.iconPath(button.modelData.icon, true) : ""
+                source: button._face.icon ? Quickshell.iconPath(button._face.icon, true) : ""
                 asynchronous: true
             }
             // the run flash's shockwave: an outline in the slice's colour,
@@ -532,7 +582,7 @@ Item {
                 anchors.top: parent.bottom
                 anchors.topMargin: 5
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: (button.modelData.label ?? "") + (button._isGroup ? " \u203a" : "")
+                text: (button._face.label ?? "") + (button._isGroup ? " \u203a" : "")
                 color: Theme.text
                 style: Text.Outline
                 styleColor: "#000000"
