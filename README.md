@@ -38,7 +38,8 @@ just commit                          # run the highlighted item (bind this to th
 > [!NOTE]
 > appring is young (0.1). It runs on Linux under Wayland, built on
 > [Quickshell](https://quickshell.org). For now we build and test it under Hyprland;
-> other compositors have not been tried yet. macOS and Windows are planned, not started.
+> other compositors have not been tried yet. macOS is a separate menu-bar app in
+> [`macos/`](macos/) (not Quickshell). Windows is planned, not started.
 > It is packaged for Nix; other packages are not there yet.
 
 ## Why
@@ -95,12 +96,29 @@ bind  = SUPER, grave, exec, quickshell ipc -p /path/to/appring/appring call appr
 bindr = SUPER, grave, exec, quickshell ipc -p /path/to/appring/appring call appring commit
 ```
 
+### macOS
+
+The Mac app is not the Quickshell shell. It is a menu-bar program in [`macos/`](macos/), same menu file and the same gesture: hold a key, point, release.
+
+```bash
+cd macos
+swift run appring-core-tests
+swift run appring          # menu bar, hidden until you hold the key
+# or a double-clickable app:
+./build-app.sh             # dist/appring.app
+```
+
+Hold **Right Option** (the menu bar can switch that to Right Command, Right Control, F19 or `` ` ``). Point, then release to run. Esc or a right click cancels; a click also runs the highlighted item. The first launch asks for Accessibility, which the hold key needs. Without it, use Open in the menu bar.
+
+`appring settings` (or Edit menu…) creates `~/.config/appring/menu.json` from the Mac default if you don't have one, and opens it. There is no appearance window yet. `appearance.json` is still read for scale, dead zone, slice gap, labels, enlarge-selected and open-at-cursor. With no `labels` key, the Mac app shows the selected item's name (Linux still defaults to none).
+
 ## Your menu
 
 The ring reads `~/.config/appring/menu.json` each time it opens
-(`$XDG_CONFIG_HOME/appring`, or `APPRING_CONFIG_DIR`). Without one it shows
-[`appring/default.json`](appring/default.json). `open "tools"` reads `menu-tools.json`
-from the same folder.
+(`$XDG_CONFIG_HOME/appring`, or `APPRING_CONFIG_DIR`). Without one, Linux shows
+[`appring/default.json`](appring/default.json) and macOS shows
+[`macos/Sources/appring/default.json`](macos/Sources/appring/default.json) (Safari, Terminal, Finder, Tools). `open "tools"` reads `menu-tools.json`
+from the same folder. A menu name cannot contain `/` or `..`.
 
 ```json
 {
@@ -174,10 +192,11 @@ point your key binds at `appring/` with `call appring`.
 
 > [!WARNING]
 > appring runs what your menu file says, as you: treat `menu.json` like a shell
-> script. While open it is a full-screen overlay with keyboard focus; another program
-> in your Wayland session can draw a lookalike, and anything that can call
-> Quickshell's IPC as your user can open it and run the highlighted item. Linux and
-> Wayland only for now. More in [SECURITY.md](SECURITY.md).
+> script. While open it is a full-screen overlay with keyboard focus. On Linux,
+> another program in your Wayland session can draw a lookalike, and anything that
+> can call Quickshell's IPC as your user can open it and run the highlighted item.
+> On macOS, another process running as you can do the same through the command
+> socket. More in [SECURITY.md](SECURITY.md).
 
 ## Development
 

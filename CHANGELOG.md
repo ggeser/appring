@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- macOS, as its own menu-bar app in `macos/` (Quickshell stays the Linux app). Same `menu.json`: hold a key, point, release to run, groups as a smaller ring. The hold key needs Accessibility permission. The appearance window and its animations are not on macOS yet; `settings` opens the menu file.
+
 ## 0.1.0
 
 - A package (`nix run github:mirql/appring`, `nix profile install github:mirql/appring`):
