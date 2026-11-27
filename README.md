@@ -38,8 +38,8 @@ just commit                          # run the highlighted item (bind this to th
 > [!NOTE]
 > appring is young (0.1). It runs on Linux under Wayland, built on
 > [Quickshell](https://quickshell.org). For now we build and test it under Hyprland;
-> other compositors have not been tried yet. macOS is a separate menu-bar app in
-> [`macos/`](macos/) (not Quickshell). Windows is planned, not started.
+> other compositors have not been tried yet. macOS: experimental, see
+> [below](#macos-experimental). Windows is planned, not started.
 > It is packaged for Nix; other packages are not there yet.
 
 ## Why
@@ -111,9 +111,19 @@ sliding away:
 layerrule = noanim, ^(appring)$
 ```
 
-### macOS
+### macOS (experimental)
 
-The Mac app is not the Quickshell shell. It is a menu-bar program in [`macos/`](macos/), same menu file and the same gesture: hold a key, point, release.
+We are still finding out what the macOS app should be, so there are two experiments to try:
+
+- a native menu-bar app in [`macos/`](macos/) (Swift, not Quickshell): the same menu file
+  and the same gesture, below;
+- a Qt app that reuses the Linux ring's QML unchanged, in
+  [`experiments/macos-qt`](experiments/macos-qt/RESULTS.md): it draws the ring, without the
+  hold key or your menu yet.
+
+#### The menu-bar app
+
+The menu-bar program in [`macos/`](macos/) has the same menu file and the same gesture: hold a key, point, release.
 
 ```bash
 cd macos
