@@ -303,19 +303,25 @@ private func styleValues(_ raw: Any, context: String) -> ([String: StyleValue], 
 
 private func styleValue(_ raw: Any?) -> StyleValue? {
     guard let raw else { return nil }
-    if let flag = raw as? Bool { return .flag(flag) }
     if let text = raw as? String { return .text(text) }
+    // `as? Bool` принимает и числа 0 и 1. JSON-bool - это CFBoolean, его смотрим раньше числа.
+    if let flag = boolean(raw) { return .flag(flag) }
     if let number = number(raw) { return .number(number) }
     return nil
 }
 
+private func boolean(_ raw: Any) -> Bool? {
+    guard let number = raw as? NSNumber else { return raw as? Bool }
+    guard CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+    return number.boolValue
+}
+
 private func number(_ raw: Any?) -> Double? {
+    if let number = raw as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() { return nil }
     switch raw {
     case let value as Double: return value
     case let value as Int: return Double(value)
-    case let value as NSNumber:
-        if CFGetTypeID(value) == CFBooleanGetTypeID() { return nil }
-        return value.doubleValue
+    case let value as NSNumber: return value.doubleValue
     default: return nil
     }
 }

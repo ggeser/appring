@@ -133,6 +133,16 @@ styled.openMenu(items: menu.items, style: menu.style, centre: Vec(0, 0), pointer
 expectEqual(styled.styles[0].size, 80, "style size")
 expect(styled.styles[0].backdrop, "style backdrop")
 
+let zeroAndOne = """
+{"style":{"glowSize":0,"cornerRadius":1,"backdrop":true},"items":[{"label":"A"}]}
+""".data(using: .utf8)!
+let zeroMenu = parseMenu(zeroAndOne)
+var zeroSession = Session()
+zeroSession.openMenu(items: zeroMenu.items, style: zeroMenu.style, centre: Vec(0, 0), pointer: Vec(0, 0), screen: Vec(800, 800), appearance: Appearance(), now: 0)
+expectEqual(zeroSession.styles[0].glowSize, 0, "glowSize zero stays a number")
+expectEqual(zeroSession.styles[0].cornerRadius, 1, "cornerRadius one stays a number")
+expect(zeroSession.styles[0].backdrop, "json true stays a flag")
+
 let legacy = resolveConfigDirectory(env: [:], home: "/Users/me", exists: { $0 == "/Users/me/.config/ring-app" })
 expectEqual(legacy.path, "/Users/me/.config/ring-app", "legacy dir")
 expect(legacy.legacy, "legacy flag")

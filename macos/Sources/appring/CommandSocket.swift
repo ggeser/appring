@@ -41,9 +41,14 @@ enum CommandSocket {
 final class CommandServer {
     private var fd: Int32 = -1
     private var source: DispatchSourceRead?
+    private var clients: [Int32: ClientReader] = [:]
     var onLine: ((String) -> Void)?
 
     func start() -> Bool {
+        // Замок в личном TMPDIR: файл в /tmp другой пользователь может создать заранее и этим застолбить старт.
+        let lock = StartupLock()
+        guard lock.acquire() else { return false }
+        defer { lock.release() }
         let path = CommandSocket.path()
         // Живой сокет не удаляем: иначе второй `appring open` срывает команду у уже запущенного.
         if CommandSocket.send("ping") { return false }
@@ -56,11 +61,21 @@ final class CommandServer {
         fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         var address = sockaddr_un()
-        guard fill(&address, path: path) else { return false }
+        guard fill(&address, path: path) else {
+            dropSocket()
+            return false
+        }
         let bound = withSockAddress(&address) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-        guard bound == 0 else { return false }
+        guard bound == 0 else {
+            // Чужой сокет не удаляем: bind не прошел, путь нам не принадлежит.
+            dropSocket()
+            return false
+        }
         chmod(path, 0o600)
-        guard listen(fd, 8) == 0 else { return false }
+        guard listen(fd, 8) == 0 else {
+            dropSocket()
+            return false
+        }
         let flags = fcntl(fd, F_GETFL)
         _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
         let reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
@@ -73,11 +88,17 @@ final class CommandServer {
     func stop() {
         source?.cancel()
         source = nil
+        for reader in clients.values { reader.cancel() }
+        clients.removeAll()
         // Клиент тоже получает terminate и не должен сносить сокет работающего экземпляра.
         let ownsSocket = fd >= 0
+        dropSocket()
+        if ownsSocket { unlink(CommandSocket.path()) }
+    }
+
+    private func dropSocket() {
         if fd >= 0 { close(fd) }
         fd = -1
-        if ownsSocket { unlink(CommandSocket.path()) }
     }
 
     private func acceptClients() {
@@ -90,13 +111,119 @@ final class CommandServer {
                 close(client)
                 continue
             }
-            var buffer = [UInt8](repeating: 0, count: 512)
-            let count = read(client, &buffer, buffer.count)
+            readClient(client)
+        }
+    }
+
+    // Принятый сокет наследует O_NONBLOCK. EAGAIN - данных еще нет, соединение не закрываем.
+    private func readClient(_ client: Int32) {
+        var chunk = [UInt8](repeating: 0, count: 512)
+        while true {
+            let count = read(client, &chunk, chunk.count)
+            if count < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    watch(client)
+                    return
+                }
+                finish(client)
+                return
+            }
+            let reader = clients[client] ?? ClientReader(fd: client)
+            if count == 0 {
+                let line = reader.text(eof: true)
+                finish(client)
+                if let line { onLine?(line) }
+                return
+            }
+            reader.append(chunk.prefix(count))
+            clients[client] = reader
+            if reader.overflow {
+                finish(client)
+                return
+            }
+            if let line = reader.text(eof: false) {
+                finish(client)
+                onLine?(line)
+                return
+            }
+        }
+    }
+
+    private func watch(_ client: Int32) {
+        let reader = clients[client] ?? ClientReader(fd: client)
+        if reader.source != nil {
+            clients[client] = reader
+            return
+        }
+        let source = DispatchSource.makeReadSource(fileDescriptor: client, queue: .main)
+        source.setEventHandler { [weak self] in self?.readClient(client) }
+        source.setCancelHandler { close(client) }
+        reader.source = source
+        clients[client] = reader
+        source.resume()
+    }
+
+    private func finish(_ client: Int32) {
+        guard let reader = clients.removeValue(forKey: client) else {
             close(client)
-            guard count > 0 else { continue }
-            let line = String(decoding: buffer.prefix(count), as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            onLine?(line)
+            return
+        }
+        reader.cancel()
+    }
+}
+
+private final class ClientReader {
+    let fd: Int32
+    var source: DispatchSourceRead?
+    private var bytes = Data()
+    private(set) var overflow = false
+
+    init(fd: Int32) { self.fd = fd }
+
+    func append(_ chunk: ArraySlice<UInt8>) {
+        bytes.append(contentsOf: chunk)
+        if bytes.count > 512 { overflow = true }
+    }
+
+    func text(eof: Bool) -> String? {
+        guard eof || bytes.contains(UInt8(10)), !overflow else { return nil }
+        let text = String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    func cancel() {
+        if let source {
+            source.cancel()
+            self.source = nil
+            return
+        }
+        close(fd)
+    }
+}
+
+// Личный каталог пользователя, не общий /tmp: чужой процесс не может создать этот файл раньше нас.
+private final class StartupLock {
+    private var fd: Int32 = -1
+
+    func acquire() -> Bool {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("appring-server.lock")
+        fd = open(url.path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { return false }
+        chmod(url.path, 0o600)
+        if flock(fd, LOCK_EX) != 0 {
+            close(fd)
+            fd = -1
+            return false
+        }
+        return true
+    }
+
+    func release() {
+        if fd >= 0 {
+            flock(fd, LOCK_UN)
+            close(fd)
+            fd = -1
         }
     }
 }
