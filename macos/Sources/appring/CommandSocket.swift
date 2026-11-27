@@ -91,9 +91,16 @@ final class CommandServer {
         for reader in clients.values { reader.cancel() }
         clients.removeAll()
         // Клиент тоже получает terminate и не должен сносить сокет работающего экземпляра.
-        let ownsSocket = fd >= 0
+        guard fd >= 0 else { return }
+        // Тот же замок, что в start. Иначе новый процесс займет путь между close и unlink, а мы удалим уже его сокет.
+        let lock = StartupLock()
+        guard lock.acquire() else {
+            dropSocket()
+            return
+        }
+        defer { lock.release() }
         dropSocket()
-        if ownsSocket { unlink(CommandSocket.path()) }
+        unlink(CommandSocket.path())
     }
 
     private func dropSocket() {
