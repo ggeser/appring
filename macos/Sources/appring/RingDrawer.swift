@@ -229,7 +229,9 @@ final class RingView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        actions?.ringCommit()
+        // The click's own point, on the screen: the pointer may have moved on since the click.
+        let point = window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+        actions?.ringCommit(at: point)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -245,6 +247,6 @@ final class RingView: NSView {
 }
 
 protocol RingActions: AnyObject {
-    func ringCommit()
+    func ringCommit(at screenPoint: NSPoint)
     func ringCancel()
 }

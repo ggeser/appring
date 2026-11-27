@@ -146,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
         server.stop()
     }
 
-    func ringCommit() { performCommit() }
+    func ringCommit(at screenPoint: NSPoint) { performCommit(at: screenPoint) }
     func ringCancel() { hideRing() }
 
     private func handle(_ line: String) {
@@ -300,10 +300,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
         startTimer()
     }
 
-    private func performCommit() {
-        // A click can come before the next tick. Take the point now, or the previous sector would run.
+    private func performCommit(at screenPoint: NSPoint = NSEvent.mouseLocation) {
+        // A click can come before the next tick. Take its point now, or the previous sector would run.
         if session.open, let panel {
-            session.pointer(modelPoint(NSEvent.mouseLocation, frame: panel.frame), now: nowMs())
+            session.pointer(modelPoint(screenPoint, frame: panel.frame), now: nowMs())
         }
         let effect = session.commit()
         ringView?.session = session
