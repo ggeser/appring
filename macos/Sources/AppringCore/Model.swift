@@ -1,6 +1,6 @@
 import Foundation
 
-// Угол как в Radial.qml: 0 вверх, по часовой. Ось y смотрит вниз.
+// Angles as in Radial.qml: 0 is up, clockwise. The y axis points down.
 public func sliceOf(dx: Double, dy: Double, count: Int, gap: Double) -> (angle: Double, index: Int) {
     guard count > 0 else { return (0, -1) }
     let angle = positiveDegrees(atan2(dx, -dy) * 180 / .pi)
@@ -224,7 +224,7 @@ public func loadAppearance(data: Data?, env: [String: String], defaultLabels: St
     return appearance.clamped()
 }
 
-// Имя меню подставляется в имя файла. Слэш и ".." нельзя: open прочитал бы произвольный путь.
+// The menu name goes into the file name. No slash and no "..": open would read an arbitrary path.
 public func menuFileName(_ name: String) -> String? {
     if name.isEmpty { return "menu.json" }
     if name.contains("/") || name.contains("\\") || name.contains("..") { return nil }
@@ -257,7 +257,7 @@ public func resolveExecutable(argv0: String, path: String, isExecutable: (String
     return nil
 }
 
-// У процесса из Dock PATH короткий, без Homebrew. Команды из menu.json ищутся и там.
+// A process started from the Dock has a short PATH, without Homebrew. Commands from menu.json are looked up there too.
 public func commandSearchPath(_ current: String?) -> String {
     var parts = (current ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
     for extra in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"] where !parts.contains(extra) {
@@ -304,7 +304,7 @@ private func styleValues(_ raw: Any, context: String) -> ([String: StyleValue], 
 private func styleValue(_ raw: Any?) -> StyleValue? {
     guard let raw else { return nil }
     if let text = raw as? String { return .text(text) }
-    // `as? Bool` принимает и числа 0 и 1. JSON-bool - это CFBoolean, его смотрим раньше числа.
+    // `as? Bool` also accepts the numbers 0 and 1. A JSON bool is a CFBoolean, so check for it before a number.
     if let flag = boolean(raw) { return .flag(flag) }
     if let number = number(raw) { return .number(number) }
     return nil
@@ -373,7 +373,7 @@ public struct Session: Equatable {
     public var screenWidth = 0.0
     public var screenHeight = 0.0
     public var appearance = Appearance()
-    // now в pointer/advance/openMenu - миллисекунды. lastNow нужен commit(), у него своих часов нет.
+    // now in pointer/advance/openMenu is in milliseconds. commit() needs lastNow, it has no clock of its own.
     private var lastNow: Double = 0
     private var pastOuterHandled = false
     private var groupDeadline: Double?
@@ -474,7 +474,7 @@ public struct Session: Equatable {
     }
 
     private mutating func recompute(now: Double) {
-        // Закрытие спутника сразу пересчитывает основное кольцо. Второго захода хватает.
+        // Closing the satellite recomputes the main ring at once. A second pass is enough.
         if recomputeOnce(now: now) {
             _ = recomputeOnce(now: now)
         }
@@ -502,7 +502,7 @@ public struct Session: Equatable {
             let towardCentre = mdist < satellite.closeRadius
             var angleDiff = abs(mainAngle - satellite.parentAngle)
             if angleDiff > 180 { angleDiff = 360 - angleDiff }
-            // Как в QML: сравниваем угол, даже если указатель в мертвой зоне и индекс не выбран.
+            // As in QML: compare the angle even when the pointer is in the dead zone and no index is selected.
             let differentItem = angleDiff > satellite.closeAngleThreshold
             let shouldClose = towardCentre || differentItem
             if shouldClose {

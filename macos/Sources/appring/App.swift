@@ -212,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
     func menuWillOpen(_ menu: NSMenu) {
         let trusted = AXIsProcessTrusted()
         menu.item(withTag: 1)?.title = trusted ? "Accessibility: on" : "Allow Accessibility…"
-        // Диалог Accessibility не ждет ответа. К следующему открытию меню доступ уже может быть.
+        // The Accessibility dialog doesn't wait for an answer. By the next time the menu opens, access may be there.
         if trusted, hotkey?.installed != true { installHotkey() }
         let current = HoldKey.stored()
         if let submenu = menu.item(withTitle: "Hold key")?.submenu {
@@ -301,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
     }
 
     private func performCommit() {
-        // Клик может прийти раньше следующего тика. Берем точку сейчас, иначе сработает прошлый сектор.
+        // A click can come before the next tick. Take the point now, or the previous sector would run.
         if session.open, let panel {
             session.pointer(modelPoint(NSEvent.mouseLocation, frame: panel.frame), now: nowMs())
         }

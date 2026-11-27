@@ -14,7 +14,7 @@ let package = Package(
             dependencies: ["AppringCore"],
             resources: [.process("default.json")]
         ),
-        // Не XCTest: у Command Line Tools нет этого фреймворка, раннер запускается через swift run.
+        // Not XCTest: the Command Line Tools don't have that framework; the runner starts with swift run.
         .executableTarget(name: "appring-core-tests", dependencies: ["AppringCore"]),
     ]
 )

@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-// Сокет в /tmp, а не в TMPDIR: путь должен влезть в sockaddr_un (~104 байта), у macOS TMPDIR длиннее.
+// The socket is in /tmp, not in TMPDIR: the path must fit in sockaddr_un (~104 bytes), and macOS's TMPDIR is longer.
 enum CommandSocket {
     static func path() -> String {
         "/tmp/appring-\(getuid()).sock"
@@ -28,7 +28,7 @@ enum CommandSocket {
         return wrote == bytes.count
     }
 
-    // run и open часто стартуют вместе. Коротко ждем сокет, и только потом становимся вторым экземпляром.
+    // run and open often start together. Wait briefly for the socket, and only then become the second instance.
     static func sendReady(_ line: String) -> Bool {
         for _ in 0..<30 {
             if send(line) { return true }
@@ -45,12 +45,12 @@ final class CommandServer {
     var onLine: ((String) -> Void)?
 
     func start() -> Bool {
-        // Замок в личном TMPDIR: файл в /tmp другой пользователь может создать заранее и этим застолбить старт.
+        // The lock is in the user's own TMPDIR: another user could create a file in /tmp first and so claim the start.
         let lock = StartupLock()
         guard lock.acquire() else { return false }
         defer { lock.release() }
         let path = CommandSocket.path()
-        // Живой сокет не удаляем: иначе второй `appring open` срывает команду у уже запущенного.
+        // Don't remove a live socket: a second `appring open` would break the command for the instance already running.
         if CommandSocket.send("ping") { return false }
         var info = stat()
         if lstat(path, &info) == 0 {
@@ -67,7 +67,7 @@ final class CommandServer {
         }
         let bound = withSockAddress(&address) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         guard bound == 0 else {
-            // Чужой сокет не удаляем: bind не прошел, путь нам не принадлежит.
+            // Don't remove someone else's socket: bind failed, the path isn't ours.
             dropSocket()
             return false
         }
@@ -90,9 +90,9 @@ final class CommandServer {
         source = nil
         for reader in clients.values { reader.cancel() }
         clients.removeAll()
-        // Клиент тоже получает terminate и не должен сносить сокет работающего экземпляра.
+        // A client gets terminate too and must not remove the running instance's socket.
         guard fd >= 0 else { return }
-        // Тот же замок, что в start. Иначе новый процесс займет путь между close и unlink, а мы удалим уже его сокет.
+        // The same lock as in start. Otherwise a new process takes the path between close and unlink, and we remove its socket.
         let lock = StartupLock()
         guard lock.acquire() else {
             dropSocket()
@@ -122,7 +122,7 @@ final class CommandServer {
         }
     }
 
-    // Принятый сокет наследует O_NONBLOCK. EAGAIN - данных еще нет, соединение не закрываем.
+    // An accepted socket inherits O_NONBLOCK. EAGAIN means no data yet; don't close the connection.
     private func readClient(_ client: Int32) {
         var chunk = [UInt8](repeating: 0, count: 512)
         while true {
@@ -209,7 +209,7 @@ private final class ClientReader {
     }
 }
 
-// Личный каталог пользователя, не общий /tmp: чужой процесс не может создать этот файл раньше нас.
+// The user's own directory, not the shared /tmp: another process can't create this file before us.
 private final class StartupLock {
     private var fd: Int32 = -1
 

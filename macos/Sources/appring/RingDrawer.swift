@@ -38,7 +38,7 @@ enum RingDrawer {
         guard session.open else { return }
         let height = rect.height
         let centre = viewPoint(Vec(session.centreX, session.centreY), height: height)
-        // Центр рисуем до кнопок: у спутника он совпадает с кнопкой группы и иначе закрывает иконку.
+        // Draw the centre before the buttons: in a satellite it sits on the group's button and would otherwise cover its icon.
         if let satellite = session.satellite {
             drawCentre(
                 at: viewPoint(Vec(satellite.centreX, satellite.centreY), height: height),
@@ -99,7 +99,7 @@ enum RingDrawer {
         for index in items.indices {
             let style = styles[index]
             let model = buttonCenter(index: index, count: items.count, centre: Vec(0, 0), radius: style.ringRadius)
-            // buttonCenter от (0, 0): x вправо, y вниз. Во view y вверх, поэтому y меняет знак.
+            // buttonCenter is from (0, 0): x to the right, y down. In the view y is up, so y changes sign.
             let point = NSPoint(x: centre.x + CGFloat(model.x), y: centre.y - CGFloat(model.y))
             let selected = index == highlighted
             drawButton(

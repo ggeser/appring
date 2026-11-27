@@ -1,5 +1,5 @@
 #!/bin/bash
-# Собирает macos/.build в dist/appring.app. Иконка берется из уже готового assets/icons/macos.
+# Builds macos/.build into dist/appring.app. The icon comes from the ready-made assets/icons/macos.
 set -euo pipefail
 cd "$(dirname "$0")"
 swift build -c release

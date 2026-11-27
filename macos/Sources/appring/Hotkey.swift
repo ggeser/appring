@@ -28,7 +28,7 @@ enum HoldKey: String, CaseIterable {
         }
     }
 
-    // Свой бит правой клавиши, не общий maskAlternate: левый Option может быть зажат вместе с ней.
+    // The right key's own bit, not the shared maskAlternate: the left Option may be held together with it.
     var deviceMask: UInt64 {
         switch self {
         case .rightOption: return 0x40
@@ -127,7 +127,7 @@ final class HotkeyMonitor {
             }
             return nil
         }
-        // Пока кольцо открыто, обычные клавиши не уходят в окно под ним: на Linux у оверлея exclusive focus.
+        // While the ring is open, ordinary keys don't go to the window under it: on Linux the overlay has exclusive focus.
         if isOpen() && type == .keyDown {
             if code == 53 { onEscape() }
             return nil
