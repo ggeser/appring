@@ -59,6 +59,13 @@ ROOT = [
     item("Tools", "applications-utilities", "group"),
 ]
 
+# Tools' items after a jump into it: a ring of their own, main-ring sizes.
+TOOLS_JUMPED = [
+    item("Say hello", "dialog-information", "leaf"),
+    item("Calculator", "accessories-calculator", "leaf"),
+    item("System monitor", "utilities-system-monitor", "leaf"),
+]
+
 # The same, with the "labels": "all" setting.
 ROOT_ALL = [dict(i, style=dict(i["style"], caption="all")) for i in ROOT]
 
@@ -68,6 +75,23 @@ TOOLS_SAT = [
     sat_item("Calculator", "accessories-calculator", "leaf"),
     sat_item("System monitor", "utilities-system-monitor", "leaf"),
 ]
+
+# menu-nest.json: two groups both labelled Twin; the first holds a group
+# (Inner) whose items have a null before Leaf.
+NEST = [
+    item("Plain", "folder", "leaf"),
+    item("Twin", "folder", "group"),
+    item("Plain 2", "folder", "leaf"),
+    item("Twin", "folder", "group"),
+]
+TWIN_IN = [item("Inner", "folder", "group"), item("B", "text-x-generic", "leaf")]
+INNER_IN = [item("Leaf", "text-x-generic", "leaf")]
+
+# the late-read scene: the old folder's menu (a group at the bottom), its
+# group's items, and the new folder's menu
+LATE_OLD = [item("Old", "folder", "leaf"), item("Old group", "folder", "group")]
+LATE_OLD_IN = [item("Old A", "text-x-generic", "leaf"), item("Old B", "text-x-generic", "leaf")]
+LATE_NEW = [item("New", "folder", "leaf")]
 
 SOLO = [item("Solo", "applications-system", "leaf")]
 SUB1 = [item("Sub1", "applications-utilities", "leaf")]
@@ -101,9 +125,15 @@ JUMP_B = (700, 1100)
 SENTINEL = (-1, -1)   # Radial.qml's _close(): off-screen, unmistakable
 
 
-def at(items, highlighted, dead_zone, cx=CX, cy=CY, visible=True, satellite=None):
+def at(items, highlighted, dead_zone, cx=CX, cy=CY, visible=True, satellite=None,
+       rotation=None, ghost=-1, depth=0, ghost_hl=-1):
+    # rotation: the face of each "rotate" group, {index: item index} (keys as
+    # JSON strings); ghost: the group whose ghost ring shows; depth: rings
+    # jumped into
     return {"visible": visible, "items": items, "highlighted": highlighted,
-            "deadZone": dead_zone, "centreX": cx, "centreY": cy, "satellite": satellite}
+            "deadZone": dead_zone, "centreX": cx, "centreY": cy,
+            "rotation": {str(k): v for k, v in (rotation or {}).items()},
+            "ghost": ghost, "ghostHighlighted": ghost_hl, "depth": depth, "satellite": satellite}
 
 
 def closed():
@@ -169,9 +199,46 @@ EXPECT = {
     "named-menu": at(SUB1, -1, True),
     "named-missing": at([], -1, True),
     "closed-by-old-target": closed(),
+    # Nested rings, "rotate" (the default): Tools (index 3) shows its face.
+    "rotate-face": at(ROOT, 3, False, rotation={3: 0}),
+    "rotate-ghost": at(ROOT, 3, False, rotation={3: 0}, ghost=3),
+    "rotate-wheel": at(ROOT, 3, False, rotation={3: 1}, ghost=3),
+    # into the ghost ring: its first item after the turn, System monitor
+    "ghost-pick": at(ROOT, 3, False, rotation={3: 1}, ghost=3, ghost_hl=0),
+    "ghost-ran": closed(),
+    # what ran from the ghost ring is the face now
+    "rotate-remembered": at(ROOT, 3, False, rotation={3: 2}),
+    # the middle button: the ring switches to Tools' items (the pointer, to
+    # the left, points at the third of them, 240deg); Esc goes back, then closes
+    "jumped": at(TOOLS_JUMPED, 2, False, depth=1),
+    "jumped-back": at(ROOT, 3, False, rotation={3: 2}),
+    "nested-closed": closed(),
+    "face-ran": closed(),
+    # the wheel turned the second Twin only
+    "twin-turned": at(NEST, 3, False, rotation={1: 0, 3: 1}),
+    # the middle button into the first Twin, then into Inner: the null is gone
+    "twin-jumped": at(TWIN_IN, 0, False, rotation={0: 0}, depth=1),
+    "inner-jumped": at(INNER_IN, 0, False, depth=2),
+    "nest-closed": closed(),
+    # the first Twin turned to B (the second keeps its turn: "remember"); its
+    # ghost ring holds Inner; releasing on it goes into Twin, then Inner
+    "ghost-group-pick": at(NEST, 1, False, rotation={1: 1, 3: 1}, ghost=1, ghost_hl=0),
+    "ghost-group-jumped": at(INNER_IN, 0, False, depth=2),
+    # Esc goes back through Twin (pointer down: B)
+    "ghost-group-back": at(TWIN_IN, 1, False, rotation={0: 0}, depth=1),
+    "ghost-group-closed": closed(),
+    "toggle-jumped": at(TWIN_IN, 0, False, rotation={0: 0}, depth=1),
+    "toggle-closed": closed(),
     # No APPRING_CONFIG_DIR: only the old ~/.config/ring-app -> read; both -> appring wins.
     "old-config-folder": at([item("Old", "folder", "leaf")], -1, True),
     "new-config-folder-wins": at([item("New", "folder", "leaf")], -1, True),
+    # a menu read while open: the ghost ring goes; the jumped-into ring goes,
+    # and Esc then closes (pointer down: the bottom item of each ring)
+    "late-ghost": at(LATE_OLD, 1, False, rotation={1: 0}, ghost=1),
+    "late-read-ghost": at(LATE_NEW, 0, False),
+    "late-jumped": at(LATE_OLD_IN, 1, False, depth=1),
+    "late-read-jumped": at(LATE_NEW, 0, False),
+    "late-closed": closed(),
 
     "corner-open-exact-centre": at(ROOT, -1, True, cx=CORNER_X, cy=CORNER_Y),
     "corner-highlight-right": at(ROOT, 1, False, cx=CORNER_X, cy=CORNER_Y),
@@ -194,12 +261,15 @@ EXPECT = {
 # (click), then "Firefox" twice (click, then IPC). Nothing in default.json
 # changes anything on the machine: a gesture menu's default must be safe to
 # fire by accident.
-EXPECTED_RUNS = [
+EXPECTED_RUNS_HEAD = [
     ["notify-send", "appring", "Hello from the ring"],
     ["gnome-system-monitor"],
     ["firefox"],
     ["firefox"],
 ]
+# ...then the nested-ring part: System monitor picked in the ghost ring, then
+# run again as Tools' face.
+EXPECTED_RUNS = EXPECTED_RUNS_HEAD + [["gnome-system-monitor"], ["gnome-system-monitor"]]
 
 
 def check_no_transitional_centre(quickshell_text):
@@ -312,10 +382,13 @@ def main(radial_path, runs_path, quickshell_path, timing_path):
         bad += 1
         print(f"radial: unknown style key warning check failed: {detail}")
 
-    hints = len(re.findall(r"appring: reading the old config folder", quickshell_text))
-    if hints != 1:
+    # per config home (gallery.sh): home-old has only the old folder, home-both
+    # has both (home-late, the late-read scene, switches between them)
+    hints_old = len(re.findall(r"appring: reading the old config folder \S*/home-old/ring-app", quickshell_text))
+    hints_both = len(re.findall(r"appring: reading the old config folder \S*/home-both/ring-app", quickshell_text))
+    if hints_old != 1 or hints_both != 0:
         bad += 1
-        print(f"radial: expected the old-folder hint exactly once (only the old folder there), found {hints}")
+        print(f"radial: expected the old-folder hint once with only the old folder, never with both; found {hints_old} and {hints_both}")
     else:
         print("radial: the old config folder hint shows once, and only with the old folder alone")
 

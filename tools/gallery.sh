@@ -132,6 +132,10 @@ export SWAYSOCK; SWAYSOCK=$(sed -n 's/^SWAYSOCK=//p' "$D/sway.env")
 # fallback), and a fake for every app default.json runs, first on PATH.
 mkdir -p "$D/ring-config" "$D/bin"
 export APPRING_CONFIG_DIR="$D/ring-config"
+# Groups open as satellites for most of the scene (the "groups" setting): the
+# satellite steps below test that mode; the nested-ring part near the end
+# switches to the default, "rotate".
+printf '{ "groups": "satellite" }\n' > "$APPRING_CONFIG_DIR/appearance.json"
 case "$APPRING_CONFIG_DIR" in "$D/"*) ;; *) echo "ABORT: APPRING_CONFIG_DIR is not the scene's own"; exit 1 ;; esac
 # Far past a synthetic pointer's move+click latency (~0.3-0.5s through
 # tools/pointer.py), so "a click opens a group" and "resting opens it" test
@@ -142,6 +146,9 @@ export APPRING_REST_MS=1500
 # in step with check-radial.py's GRACE_MS. Set under its old name on
 # purpose: the old RING_APP_* names must keep working.
 export RING_APP_CLOSE_MS=2000
+# And the ghost ring's delay, far past the pointer's latency, so a step right
+# after pointing at a group still sees no ghost, and a later one sees it.
+export APPRING_GHOST_MS=1500
 for app in firefox xdg-terminal-exec nautilus notify-send gnome-calculator gnome-system-monitor; do
   printf '#!/bin/sh\nexec python3 "%s" %s "$@"\n' "$G_HERE/tools/fake-app.py" "$app" > "$D/bin/$app"
   chmod +x "$D/bin/$app"
@@ -227,7 +234,7 @@ at $b1x $b1y;  dump boundary-after
 # exactly on a border (45deg) nothing is highlighted, and committing there
 # runs nothing. Then back to the defaults.
 ipc cancel
-printf '{ "labels": "all", "sliceGap": 0.33 }\n' > "$APPRING_CONFIG_DIR/appearance.json"
+printf '{ "labels": "all", "sliceGap": 0.33, "groups": "satellite" }\n' > "$APPRING_CONFIG_DIR/appearance.json"
 sleep 1
 at $cx $cy
 ipc open ""
@@ -236,7 +243,7 @@ dump labels-all
 at $((cx + 106)) $((cy - 106)); dump slice-gap
 ipc commit
 dump slice-gap-cancelled
-printf '{ "labels": "none", "sliceGap": 0 }\n' > "$APPRING_CONFIG_DIR/appearance.json"
+printf '{ "labels": "none", "sliceGap": 0, "groups": "satellite" }\n' > "$APPRING_CONFIG_DIR/appearance.json"
 sleep 1
 at $cx $cy
 ipc open ""
@@ -458,6 +465,118 @@ shot radial-satellite-style "900,375 600x750"
 at $satLastX $satLastY;  dump style-child-b
 ipc cancel
 
+# Nested rings, the default ("groups": "rotate"), pointing at Tools' own
+# button ($satL: further out is "past" it): the Tools group shows one
+# of its items (its face) and runs it; resting on it shows the ghost ring;
+# the wheel turns to the next item; the face stays for the next open; the
+# middle button jumps into the group (the ring switches to its items) and Esc
+# goes back, then closes.
+printf '{ "groups": "rotate" }\n' > "$APPRING_CONFIG_DIR/appearance.json"
+sleep 1
+at $cx $cy
+ipc open ""
+at $cx $cy
+at $right $cy   # throwaway: the first move after an open
+at $satL $cy;  quick_dump rotate-face
+sleep 1.6;     dump rotate-ghost
+shot nested-ghost "700,375 900x750"
+ptr scroll 1
+dump rotate-wheel
+# Out past Tools' button into its ghost ring (3 items: radius 34, centre
+# 147px left of the main centre; its first slot, pointing back, is Tools'
+# own button), at its second slot (210deg): System monitor, after the turn.
+at $((cx - 164)) $((cy + 29)); dump ghost-pick
+shot nested-ghost-pick "700,375 900x750"
+ipc commit
+dump ghost-ran
+sleep 0.3
+at $cx $cy
+ipc open ""
+at $cx $cy
+at $right $cy   # throwaway
+at $satL $cy;  dump rotate-remembered
+click middle
+dump jumped
+shot nested-jumped "900,375 600x750"
+key -k Escape
+dump jumped-back
+key -k Escape
+dump nested-closed
+# releasing on the group runs its face
+at $cx $cy
+ipc open ""
+at $cx $cy
+at $right $cy   # throwaway
+at $satL $cy
+ipc commit
+dump face-ran
+# Two groups with the same label keep their own faces (a face is kept by the
+# group's place); a group inside a group, with a bad entry, still opens.
+cat > "$APPRING_CONFIG_DIR/menu-nest.json" <<'MENUJSON'
+[
+  { "label": "Plain", "icon": "folder", "run": ["notify-send", "plain"] },
+  { "label": "Twin", "icon": "folder", "items": [
+    { "label": "Inner", "icon": "folder", "items": [
+      null,
+      { "label": "Leaf", "icon": "text-x-generic", "run": ["notify-send", "leaf"] }
+    ] },
+    { "label": "B", "icon": "text-x-generic", "run": ["notify-send", "b"] }
+  ] },
+  { "label": "Plain 2", "icon": "folder", "run": ["notify-send", "plain 2"] },
+  { "label": "Twin", "icon": "folder", "items": [
+    { "label": "C", "icon": "text-x-generic", "run": ["notify-send", "c"] },
+    { "label": "D", "icon": "text-x-generic", "run": ["notify-send", "d"] }
+  ] }
+]
+MENUJSON
+at $cx $cy
+ipc open "nest"
+at $cx $cy
+at $cx $down   # throwaway
+at $satL $cy
+ptr scroll 1
+dump twin-turned
+at $right $cy
+click middle
+at $cx $up
+dump twin-jumped
+click middle
+dump inner-jumped
+key -k Escape
+key -k Escape
+key -k Escape
+dump nest-closed
+# A group picked from a ghost ring opens: the first Twin (right) turned to B,
+# so its ghost ring (2 slots, radius 34, centre 147px right of the main
+# centre; slot 0 points back) holds Inner, 181px right of the centre.
+at $cx $cy
+ipc open "nest"
+at $cx $cy
+at $cx $down   # throwaway
+at $((cx + 110)) $cy
+ptr scroll 1
+sleep 1.6
+at $((cx + 181)) $cy; dump ghost-group-pick
+ipc commit
+dump ghost-group-jumped
+key -k Escape
+at $cx $down;  dump ghost-group-back
+key -k Escape
+key -k Escape
+dump ghost-group-closed
+# toggle closes from inside a group, not one ring back
+at $cx $cy
+ipc open "nest"
+at $cx $cy
+at $cx $down   # throwaway
+at $right $cy
+click middle
+at $cx $up;  dump toggle-jumped
+ipc toggle ""
+dump toggle-closed
+printf '{ "groups": "satellite" }\n' > "$APPRING_CONFIG_DIR/appearance.json"
+sleep 1
+
 # The settings window: opens over IPC, draws its preview, closes again.
 ipc settings
 sleep 1.5
@@ -493,6 +612,40 @@ ipc open ""
 at $cx $cy
 dump new-config-folder-wins
 ipc cancel
+# A menu read while open (here: ~/.config/appring appears, so the folder
+# changes) starts at the new menu's top: the ghost ring showing, or the ring
+# jumped into, goes, and Esc cannot go back into the old menu.
+mkdir -p "$D/home-late/ring-app"
+cat > "$D/home-late/ring-app/menu.json" <<'MENUJSON'
+[
+  { "label": "Old", "icon": "folder", "run": ["notify-send", "late old"] },
+  { "label": "Old group", "icon": "folder", "items": [
+    { "label": "Old A", "icon": "text-x-generic", "run": ["notify-send", "late old a"] },
+    { "label": "Old B", "icon": "text-x-generic", "run": ["notify-send", "late old b"] }
+  ] }
+]
+MENUJSON
+new_menu() {
+  mkdir -p "$D/home-late/appring"
+  echo '[{ "label": "New", "icon": "folder", "run": ["notify-send", "late new"] }]' > "$D/home-late/appring/menu.json"
+}
+restart_with_config_home "$D/home-late"
+at $cx $cy
+ipc open ""
+at $cx $cy
+at $right $cy   # throwaway
+at $cx $down
+sleep 1.6;  dump late-ghost
+new_menu
+sleep 1;    dump late-read-ghost
+rm -rf "$D/home-late/appring"
+sleep 1
+click middle
+dump late-jumped
+new_menu
+sleep 1;    dump late-read-jumped
+key -k Escape
+dump late-closed
 
 cp "$D/radial.log" "$G_OUT/radial.log"
 cp "$FAKE_APP_LOG" "$G_OUT/radial-runs.log"

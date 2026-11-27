@@ -16,6 +16,12 @@ Item {
     property bool ringVisible: false
     // null, or Radial.qml's satellite frame (see `_openSatellite` there).
     property var satellite: null
+    // what each main button shows (a group's face), and the ghost ring (a
+    // group's other items, as a preview) or null: see Radial.qml
+    property var faces: []
+    property var ghost: null
+    property int ghostHighlighted: -1   // the ghost ring's item under the pointer, or -1
+    property int flashGhost: -1         // closing: the ghost item that was run (flashes)
     // 0, or the closing animation's progress (0 to 1), its length, and the
     // item that was run (flashes): see RingLayer
     property real closeT: 0
@@ -28,14 +34,21 @@ Item {
     readonly property real chevronAngle: mainLayer.chevronAngle
     readonly property var mainColours: mainLayer.iconColours
     readonly property var satColours: satLayer.iconColours
+    // changes on a jump into a group, or back: the main ring zooms in again
+    property int zoomKey: 0
+    // false for the closing copy: nothing in it animates in (see RingLayer)
+    property bool animateOpen: true
     property var presetMain: ({})
     property var presetSat: ({})
 
     RingLayer {
         id: mainLayer
         anchors.fill: parent
+        animateOpen: root.animateOpen
         presetColours: root.presetMain
         spin: root.spin >= 0 ? root.spin : _ownSpin
+        faces: root.faces
+        zoomKey: root.zoomKey
         items: root.items
         styles: root.styles
         highlighted: root.highlighted
@@ -54,6 +67,7 @@ Item {
     RingLayer {
         id: satLayer
         anchors.fill: parent
+        animateOpen: root.animateOpen
         presetColours: root.presetSat
         visible: !!root.satellite
         items: root.satellite ? root.satellite.items : []
@@ -70,5 +84,31 @@ Item {
         flashIndex: root.flashSat
         brightIndex: -1
         dimOpacity: 1.0
+    }
+
+    // the ghost ring: a group's other items, faint and smaller, fading in
+    RingLayer {
+        id: ghostLayer
+        anchors.fill: parent
+        animateOpen: root.animateOpen
+        property var g: root.ghost
+        visible: opacity > 0.01
+        // a preview, a little faint; full when the pointer is in it
+        opacity: root.ghost ? (root.ghostHighlighted >= 0 ? 1 : Theme.ghostOpacity) : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.state } }
+        showCentre: false
+        items: g ? g.items : []
+        styles: g ? g.styles : []
+        slotCount: g ? g.slotCount : 0
+        slotOffset: 1
+        startAngle: g ? g.startAngle : 0
+        centreX: g ? g.centreX : 0
+        centreY: g ? g.centreY : 0
+        highlighted: root.ghostHighlighted
+        deadZone: root.ghostHighlighted < 0
+        flashIndex: root.flashGhost
+        ringVisible: root.ringVisible && !!g
+        closeT: root.closeT
+        closeMs: root.closeMs
     }
 }

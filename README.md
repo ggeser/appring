@@ -77,9 +77,13 @@ put it there). On Hyprland:
 
 ```ini
 exec-once = appring run
-bind  = SUPER, grave, exec, appring open
-bindr = SUPER, grave, exec, appring commit
+bind = SUPER, grave, global, appring:ring
 ```
+
+The bind is a Hyprland global shortcut: appring hears the key's press (it opens) and
+its release (the highlighted item runs) straight from Hyprland, with no command to
+start each time. On other compositors, bind the press to `appring open` and the
+release to `appring commit`.
 
 `appring help` lists the commands: `run`, `open [NAME]`, `commit`, `cancel`,
 `toggle [NAME]`, `settings`, `stop`, `restart`. `open` and `settings` start it when it is
@@ -87,12 +91,23 @@ not running. The package also installs a desktop entry ("appring", it opens the
 appearance window) and the icons.
 
 Without Nix, or from a checkout: you need [Quickshell](https://quickshell.org) on your
-`PATH`. The same three lines then call Quickshell with the checkout's `appring` folder:
+`PATH`, and start it with the checkout's `appring` folder (the bind stays the same):
 
 ```ini
 exec-once = quickshell -p /path/to/appring/appring -d
-bind  = SUPER, grave, exec, quickshell ipc -p /path/to/appring/appring call appring open ""
-bindr = SUPER, grave, exec, quickshell ipc -p /path/to/appring/appring call appring commit
+bind = SUPER, grave, global, appring:ring
+```
+
+On other compositors, bind the press to
+`quickshell ipc -p /path/to/appring/appring call appring open ""` and the release to
+`... call appring commit`.
+
+appring draws its own opening and closing; turn off Hyprland's layer animation for it,
+or Hyprland shrinks and fades its full-screen layer on top, which looks like the ring
+sliding away:
+
+```ini
+layerrule = noanim, ^(appring)$
 ```
 
 ## Your menu
@@ -119,7 +134,19 @@ from the same folder.
 - `run` is an argv list, started directly, without a shell. For a shell
   command, say so: `["sh", "-c", "…"]`.
 - `icon` is an icon name from your icon theme.
-- `items` makes a group: its items open as a smaller ring. Groups go one level deep.
+- `items` makes a group. By default it works as in OPie: its button shows one of its
+  items (the face) and runs it, the mouse wheel over it turns to the next one, and
+  resting on it shows the others as a small ghost ring around it; move on into the
+  ghost ring and release over one to run it (it becomes the face). A middle click
+  jumps into the group (the whole ring becomes its items); Esc or a right click goes
+  back. Per group:
+  - `open`: `rotate` (the default above), `jump` (opening it switches the ring to its
+    items), `satellite` (its items open as a smaller ring around it). The appearance
+    window sets the default for every group.
+  - `rotation`, which item a `rotate` group shows next: `remember` (the last one you
+    ran or turned to; the default), `cycle` (the next one after each run), `shuffle`
+    or `random` (another one at random after each run), `reset` (the first one, each
+    time the ring opens).
 - `style` (top level, per group, per item): `shape` (`rounded-square` or
   `circle`), `cornerRadius`, `size`, `glowColor` (the slice's colour: `auto`,
   a `#rrggbb`, or `accent`, `ok`, `warn`, `error`, `muted`, `dim`, `text`),
@@ -143,6 +170,8 @@ your menu as an item). It shows a live preview, and saves to
 | Enlarge selected slice | on |
 | Colours from icons (off: a fixed palette) | on |
 | Slice labels: none, selected, all | none |
+| Groups: rotate, jump, satellite (see [Your menu](#your-menu)) | rotate |
+| Nested ring preview (the ghost ring when resting on a group) | on |
 | Centre spin, seconds per turn (0: still) | 4 |
 | Gap between slices, where nothing is selected | 0 |
 | Dead zone around the centre, px | 40 |
@@ -151,7 +180,8 @@ your menu as an item). It shows a live preview, and saves to
 | Glow strength; flash pop (how much the button grows) | 0.75; +30% |
 
 Settings by environment: `APPRING_RELEASE_KEY` (`Super`, `Alt`, `Ctrl`, `Shift`),
-`APPRING_REST_MS` (resting on a group opens it, default 250),
+`APPRING_REST_MS` (resting on a group opens it, default 250), `APPRING_GHOST_MS` (resting
+on a group shows its ghost ring, default 250),
 `APPRING_REDUCED_MOTION=1`. More in [`appring/shell.qml`](appring/shell.qml).
 
 Coming from ring-app, appring's earlier name? Nothing breaks: the `RING_APP_*` names, the
