@@ -1,14 +1,24 @@
 import Darwin
 import Foundation
 
-// The socket is in /tmp, not in TMPDIR: the path must fit in sockaddr_un (~104 bytes), and macOS's TMPDIR is longer.
+// The socket is in the user's own temporary folder, not the shared /tmp: in /tmp another user could
+// take the path first, and the app would not start. The folder comes from confstr, not TMPDIR, so
+// every process of the user finds the same one; its path fits in sockaddr_un (~104 bytes).
 enum CommandSocket {
-    static func path() -> String {
-        "/tmp/appring-\(getuid()).sock"
+    static func path() -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let length = confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, buffer.count)
+        guard length > 0, length <= buffer.count else { return nil }
+        var folder = String(cString: buffer)
+        if !folder.hasSuffix("/") { folder += "/" }
+        var info = stat()
+        guard lstat(folder, &info) == 0, info.st_uid == getuid(), (info.st_mode & S_IFMT) == S_IFDIR,
+              info.st_mode & 0o077 == 0 else { return nil }
+        return folder + "appring.sock"
     }
 
     static func send(_ line: String) -> Bool {
-        let path = self.path()
+        guard let path = self.path() else { return false }
         var info = stat()
         guard lstat(path, &info) == 0, info.st_uid == getuid(), (info.st_mode & S_IFMT) == S_IFSOCK else {
             return false
@@ -49,7 +59,7 @@ final class CommandServer {
         let lock = StartupLock()
         guard lock.acquire() else { return false }
         defer { lock.release() }
-        let path = CommandSocket.path()
+        guard let path = CommandSocket.path() else { return false }
         // Don't remove a live socket: a second `appring open` would break the command for the instance already running.
         if CommandSocket.send("ping") { return false }
         var info = stat()
@@ -100,7 +110,7 @@ final class CommandServer {
         }
         defer { lock.release() }
         dropSocket()
-        unlink(CommandSocket.path())
+        if let path = CommandSocket.path() { unlink(path) }
     }
 
     private func dropSocket() {
