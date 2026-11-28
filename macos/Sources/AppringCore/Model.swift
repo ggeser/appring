@@ -440,6 +440,14 @@ public struct Session: Equatable {
 
     public mutating func commit() -> CommitEffect {
         guard open else { return .ignored }
+        if satellite != nil, satCloseDeadline != nil {
+            // Closing: the satellite keeps its selection only to draw the grace. Close it now and commit the main ring.
+            satellite = nil
+            satCloseDeadline = nil
+            pastOuterHandled = false
+            groupDeadline = nil
+            recompute(now: lastNow)
+        }
         if let satellite {
             if !satellite.deadZone && satellite.highlighted < 0 {
                 cancel()

@@ -115,6 +115,24 @@ grace.advance(now: 20 + 150)
 expect(grace.satellite == nil, "grace elapsed")
 expect(grace.open, "main stays after grace")
 
+var leaving = opened()
+leaving.pointer(Vec(400, 200), now: 0)
+let leavingCentreY = leaving.satellite?.centreY ?? 0
+leaving.pointer(Vec(400, leavingCentreY - 100), now: 10)
+expectEqual(leaving.satellite?.highlighted ?? -2, 0, "leaving: a child is selected")
+leaving.pointer(Vec(400, 400), now: 20)
+expect(leaving.satellite != nil, "leaving: the satellite is still drawn during the grace")
+expectEqual(leaving.commit(), .closed, "a release at the centre during the grace runs nothing, not the previous child")
+expect(!leaving.open, "leaving: the ring closes")
+
+var turning = opened()
+turning.pointer(Vec(400, 200), now: 0)
+let turningCentreY = turning.satellite?.centreY ?? 0
+turning.pointer(Vec(400, turningCentreY - 100), now: 10)
+turning.pointer(Vec(600, 400), now: 20)
+expect(turning.satellite != nil, "turning: the satellite is still drawn during the grace")
+expectEqual(turning.commit(), .ran(["open", "-a", "Terminal"]), "a release on another item during the grace runs that item")
+
 var held = opened()
 let heldOpening: Int? = held.opening
 expect(held.isOpen(since: heldOpening), "a hold commits the ring it opened")
