@@ -85,6 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
     private var timer: Timer?
     private var statusItem: NSStatusItem?
     private var hotkey: HotkeyMonitor?
+    // The opening this hold started; its release commits only that one.
+    private var holdOpening: Int?
     private var warnedLegacy = false
     private var icons: [String: NSImage] = [:]
 
@@ -247,9 +249,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
             onDown: { [weak self] in
                 guard let self, !self.session.open else { return }
                 self.openRing(name: "")
+                self.holdOpening = self.session.open ? self.session.opening : nil
             },
             onUp: { [weak self] in
-                guard let self, self.session.open else { return }
+                guard let self else { return }
+                let opening = self.holdOpening
+                self.holdOpening = nil
+                guard self.session.isOpen(since: opening) else { return }
                 self.performCommit()
             },
             onEscape: { [weak self] in self?.hideRing() }

@@ -373,6 +373,8 @@ public struct Session: Equatable {
     public var screenWidth = 0.0
     public var screenHeight = 0.0
     public var appearance = Appearance()
+    // Counts the times the ring opened. A hold commits only the opening it started, not one that replaced it.
+    public private(set) var opening = 0
     // now in pointer/advance/openMenu is in milliseconds. commit() needs lastNow, it has no clock of its own.
     private var lastNow: Double = 0
     private var pastOuterHandled = false
@@ -383,6 +385,7 @@ public struct Session: Equatable {
 
     public mutating func openMenu(items: [Item], style: [String: StyleValue], centre: Vec, pointer: Vec, screen: Vec, appearance: Appearance, now: Double) {
         open = true
+        opening += 1
         self.items = items
         globalStyle = style
         self.appearance = appearance
@@ -401,6 +404,10 @@ public struct Session: Equatable {
         screenHeight = screen.y
         lastNow = now
         recompute(now: now)
+    }
+
+    public func isOpen(since opening: Int?) -> Bool {
+        open && opening == self.opening
     }
 
     public mutating func pointer(_ point: Vec, now: Double) {

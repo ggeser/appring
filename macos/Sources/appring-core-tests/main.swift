@@ -115,6 +115,16 @@ grace.advance(now: 20 + 150)
 expect(grace.satellite == nil, "grace elapsed")
 expect(grace.open, "main stays after grace")
 
+var held = opened()
+let heldOpening: Int? = held.opening
+expect(held.isOpen(since: heldOpening), "a hold commits the ring it opened")
+expect(!held.isOpen(since: nil), "a hold that opened nothing commits nothing")
+held.cancel()
+held.openMenu(items: [Item(label: "A", run: ["a"])], style: [:], centre: Vec(400, 400), pointer: Vec(400, 400), screen: Vec(800, 800), appearance: Appearance(), now: 30)
+expect(!held.isOpen(since: heldOpening), "a hold does not commit a ring opened after it was cancelled")
+held.cancel()
+expect(!held.isOpen(since: held.opening), "a closed ring is not committed")
+
 let json = """
 {"style":{"size":80,"backdrop":true,"nope":1},"items":[
   {"label":"A","run":["echo",1]},
