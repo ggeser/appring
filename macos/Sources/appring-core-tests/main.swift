@@ -125,6 +125,24 @@ expect(!held.isOpen(since: heldOpening), "a hold does not commit a ring opened a
 held.cancel()
 expect(!held.isOpen(since: held.opening), "a closed ring is not committed")
 
+let four = [Item(label: "N"), Item(label: "E"), Item(label: "S"), Item(label: "W")]
+let screen = Vec(1440, 900)
+let middle = ringCentre(pointer: Vec(700, 450), screen: screen, items: four, style: [:], appearance: Appearance())
+expectEqual(middle, Vec(700, 450), "the ring opens at the pointer when it fits")
+let corner = ringCentre(pointer: Vec(10, 10), screen: screen, items: four, style: [:], appearance: Appearance())
+let topButton = buttonCenter(index: 0, count: 4, centre: corner, radius: Appearance().ringRadius(count: 4, satellite: false))
+expect(topButton.y - 24 * 1.1 > 0, "near a corner the top button is on screen: \(topButton)")
+let leftButton = buttonCenter(index: 3, count: 4, centre: corner, radius: Appearance().ringRadius(count: 4, satellite: false))
+expect(leftButton.x - 24 * 1.1 > 0, "near a corner the left button is on screen: \(leftButton)")
+let farCorner = ringCentre(pointer: Vec(1439, 899), screen: screen, items: four, style: [:], appearance: Appearance())
+expect(farCorner.x < 1439 && farCorner.y < 899, "the far corner moves in too")
+var cornered = Session()
+cornered.openMenu(items: four.map { Item(label: $0.label, run: [$0.label]) }, style: [:], centre: corner, pointer: corner, screen: screen, appearance: Appearance(), now: 0)
+cornered.pointer(Vec(corner.x, corner.y - 60), now: 10)
+expectEqual(cornered.commit(), .ran(["N"]), "near a corner the top item can be picked")
+let tiny = ringCentre(pointer: Vec(10, 10), screen: Vec(200, 100), items: four, style: [:], appearance: Appearance())
+expectEqual(tiny, Vec(100, 50), "a screen smaller than the ring gets it in the middle")
+
 let json = """
 {"style":{"size":80,"backdrop":true,"nope":1},"items":[
   {"label":"A","run":["echo",1]},

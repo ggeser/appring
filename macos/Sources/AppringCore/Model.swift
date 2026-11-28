@@ -125,6 +125,20 @@ public func resolveStyles(items: [Item], global: [String: StyleValue], group: [S
     }
 }
 
+// The ring opens at the pointer, moved in from the screen's edges just far enough to show every button.
+// Near a corner the pointer could not otherwise leave the dead zone toward a button past the edge.
+public func ringCentre(pointer: Vec, screen: Vec, items: [Item], style: [String: StyleValue], appearance: Appearance) -> Vec {
+    let styles = resolveStyles(items: items, global: style, group: nil, satellite: false, appearance: appearance)
+    let reach = styles.map { style -> Double in
+        let caption = style.caption == "none" ? 0 : 16 + max(style.captionSize, 11) * 2
+        return style.ringRadius + style.size * appearance.highlightScale / 2 + style.glowSize + caption
+    }.max() ?? 0
+    func inside(_ value: Double, _ length: Double) -> Double {
+        length < reach * 2 ? length / 2 : min(max(value, reach), length - reach)
+    }
+    return Vec(inside(pointer.x, screen.x), inside(pointer.y, screen.y))
+}
+
 public struct Appearance: Equatable {
     public var scale: Double
     public var atCursor: Bool

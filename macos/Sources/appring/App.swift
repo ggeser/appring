@@ -283,14 +283,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
         let panel = ensurePanel()
         panel.setFrame(screen.frame, display: false)
         ringView?.frame = NSRect(origin: .zero, size: panel.contentLayoutRect.size)
-        let pointer = modelPoint(mouse, frame: panel.frame)
-        let centre = appearance.atCursor ? pointer : Vec(screen.frame.width / 2, screen.frame.height / 2)
+        var pointer = modelPoint(mouse, frame: panel.frame)
+        let size = Vec(screen.frame.width, screen.frame.height)
+        let centre = appearance.atCursor
+            ? ringCentre(pointer: pointer, screen: size, items: menu.items, style: menu.style, appearance: appearance)
+            : Vec(size.x / 2, size.y / 2)
+        if appearance.atCursor && centre != pointer {
+            // Moved in from an edge: the pointer goes with the ring, so it starts in the dead zone as usual.
+            warpPointer(to: centre, frame: panel.frame)
+            pointer = centre
+        }
         session.openMenu(
             items: menu.items,
             style: menu.style,
             centre: centre,
             pointer: pointer,
-            screen: Vec(screen.frame.width, screen.frame.height),
+            screen: size,
             appearance: appearance,
             now: nowMs()
         )
@@ -372,6 +380,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, RingActions, NSMenuDel
     private func modelPoint(_ screenPoint: NSPoint, frame: NSRect) -> Vec {
         let yUp = screenPoint.y - frame.origin.y
         return Vec(screenPoint.x - frame.origin.x, frame.height - yUp)
+    }
+
+    // CoreGraphics counts from the top left of the main screen, AppKit from its bottom left.
+    private func warpPointer(to point: Vec, frame: NSRect) {
+        let mainHeight = NSScreen.screens.first?.frame.height ?? frame.height
+        let x = frame.origin.x + point.x
+        let y = mainHeight - (frame.maxY - point.y)
+        CGWarpMouseCursorPosition(CGPoint(x: x, y: y))
+        // Without this the pointer stays still for a quarter of a second after the move.
+        CGAssociateMouseAndMouseCursorPosition(1)
     }
 
     private func nowMs() -> Double {

@@ -135,7 +135,7 @@ swift run appring          # menu bar, hidden until you hold the key
 
 Hold **Right Option** (the menu bar can switch that to Right Command, Right Control, F19 or `` ` ``). Point, then release to run. Esc or a right click cancels; a click also runs the highlighted item. The first launch asks for Accessibility, which the hold key needs. Without it, use Open in the menu bar.
 
-`appring settings` (or Edit menu…) creates `~/.config/appring/menu.json` from the Mac default if you don't have one, and opens it. There is no appearance window yet. `appearance.json` is still read for scale, dead zone, slice gap, labels, enlarge-selected and open-at-cursor. With no `labels` key, the Mac app shows the selected item's name (Linux still defaults to none).
+`appring settings` (or Edit menu…) creates `~/.config/appring/menu.json` from the Mac default if you don't have one, and opens it. There is no appearance window yet. `appearance.json` is still read for scale, dead zone, slice gap, labels, enlarge-selected and open-at-cursor. With no `labels` key, the Mac app shows the selected item's name (Linux still defaults to none). Near a screen edge the Mac ring moves in until every button shows, and the pointer moves with it.
 
 ## Your menu
 
